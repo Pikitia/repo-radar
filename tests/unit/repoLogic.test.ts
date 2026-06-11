@@ -53,7 +53,7 @@ describe("repo display logic", () => {
       aheadCommits: [{ hash: "abc", subject: "test", author: "a", date: new Date().toISOString(), files: ["a"] }],
       projectFiles: [{ path: "README.md", displayName: "README.md", kind: "markdown" }]
     }));
-    expect(tabs).toEqual(["staged", "untracked", "ahead", "project"]);
+    expect(tabs).toEqual(["staged", "untracked", "ahead", "branches", "project"]);
   });
 
   it("shows CI indicators and Actions tab for failed GitHub Actions", () => {

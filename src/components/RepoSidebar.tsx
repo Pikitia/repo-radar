@@ -10,6 +10,7 @@ function statusClass(indicator: string): string {
   if (indicator === "Diverged") return "status-diverged";
   if (indicator === "CI") return "status-ci";
   if (indicator === "CI...") return "status-ci-running";
+  if (indicator.startsWith("Dev+")) return "status-branch-gap";
   if (indicator === "Error") return "status-error";
   if (indicator === "Warn") return "status-warn";
   if (indicator.startsWith("+")) return "status-ahead";
@@ -65,7 +66,9 @@ export function RepoSidebar(props: Props) {
               <button key={repo.id} className={`repo-row ${props.selectedId === repo.id ? "selected" : ""}`} onClick={() => props.onSelect(repo)}>
                 <span className="repo-title" title={repo.relativePath}>{repo.name}</span>
                 <span className="repo-meta">
-                  <span className="branch-pill">{repo.branch ?? "detached"}</span>
+                  <span className="branch-pill">{repo.statusLoading ? "loading" : repo.branch ?? "detached"}</span>
+                  {repo.statusLoading && <span className="mini-spinner" aria-label="Loading repository status" />}
+                  {repo.branchComparisonLoading && <span className="mini-spinner branch-spinner" aria-label="Loading develop/main comparison" title="Loading develop/main comparison" />}
                   {sidebarIndicators(repo).map((item) => (
                     <b key={item} className={statusClass(item)}>{item}</b>
                   ))}

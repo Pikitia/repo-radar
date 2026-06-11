@@ -24,7 +24,14 @@ function makeId(index: number, kind: SideBySideDiffRow["kind"], leftNumber: numb
   return `${index}-${kind}-${leftNumber ?? "x"}-${rightNumber ?? "x"}`;
 }
 
-export function parseSideBySideDiff(text: string, mode: DiffMode): SideBySideDiffRow[] {
+function diffHeaderLabel(line: string): string {
+  const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+  if (!match) return line;
+  return match[1] === match[2] ? match[2] : `${match[1]} -> ${match[2]}`;
+}
+
+export function parseSideBySideDiff(text: string, mode: DiffMode | "commit"): SideBySideDiffRow[] {
+  text = text.trimStart();
   if (!text) return [];
 
   if (mode === "untracked" || !text.startsWith("diff --git")) {
@@ -76,7 +83,20 @@ export function parseSideBySideDiff(text: string, mode: DiffMode): SideBySideDif
       continue;
     }
 
-    if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+    if (line.startsWith("diff --git")) {
+      flushRemoved();
+      rows.push({
+        id: makeId(rows.length, "hunk", null, null),
+        kind: "hunk",
+        leftNumber: null,
+        rightNumber: null,
+        leftText: diffHeaderLabel(line),
+        rightText: diffHeaderLabel(line)
+      });
+      continue;
+    }
+
+    if (line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
       continue;
     }
 
@@ -130,4 +150,3 @@ export function parseSideBySideDiff(text: string, mode: DiffMode): SideBySideDif
   flushRemoved();
   return rows;
 }
-

@@ -20,10 +20,11 @@ describe("parseSideBySideDiff", () => {
       "working"
     );
 
-    expect(rows.map((row) => row.kind)).toEqual(["hunk", "context", "changed", "added", "removed", "context"]);
-    expect(rows[2]).toMatchObject({ leftNumber: 2, rightNumber: 2, leftText: "const state = \"old\";", rightText: "const state = \"new\";" });
-    expect(rows[3]).toMatchObject({ leftNumber: null, rightNumber: 3, rightText: "const extra = true;" });
-    expect(rows[4]).toMatchObject({ leftNumber: 3, rightNumber: null, leftText: "console.log(name);" });
+    expect(rows.map((row) => row.kind)).toEqual(["hunk", "hunk", "context", "changed", "added", "removed", "context"]);
+    expect(rows[0]).toMatchObject({ leftText: "src/app.ts", rightText: "src/app.ts" });
+    expect(rows[3]).toMatchObject({ leftNumber: 2, rightNumber: 2, leftText: "const state = \"old\";", rightText: "const state = \"new\";" });
+    expect(rows[4]).toMatchObject({ leftNumber: null, rightNumber: 3, rightText: "const extra = true;" });
+    expect(rows[5]).toMatchObject({ leftNumber: 3, rightNumber: null, leftText: "console.log(name);" });
   });
 
   it("renders untracked file content as additions", () => {
@@ -35,4 +36,3 @@ describe("parseSideBySideDiff", () => {
     ]);
   });
 });
-

@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { discoverRepositories } from "../../electron/git/discovery";
 import { runGit } from "../../electron/git/exec";
 import { getRepositoryStatus } from "../../electron/git/status";
-import { commit, pull, push, stageFiles, sync } from "../../electron/git/actions";
+import { getCommitDiff } from "../../electron/git/diff";
+import { bumpPackageVersion, commit, pull, push, stageFiles, sync } from "../../electron/git/actions";
+import { getBranchComparison } from "../../electron/git/branchComparison";
 import { defaultSettings } from "../../src/types/settings";
 
 let root: string;
@@ -109,5 +111,65 @@ describe("Git integration", () => {
     await commit(repo, root, "Add file");
     const clean = await getRepositoryStatus(repo, root, false);
     expect(clean.files).toHaveLength(0);
+  });
+
+  it("compares origin develop and main branch gaps with package versions", async () => {
+    const bare = path.join(root, "branches-remote.git");
+    await runGit(root, ["init", "--bare", bare]);
+    const repo = await initRepo("branches");
+    await writeFile(path.join(repo, "package.json"), JSON.stringify({ name: "branches", version: "1.0.0" }, null, 2));
+    await runGit(repo, ["add", "package.json"]);
+    await runGit(repo, ["commit", "-m", "Add package"]);
+    await runGit(repo, ["branch", "-M", "main"]);
+    await runGit(repo, ["remote", "add", "origin", bare]);
+    await runGit(repo, ["push", "-u", "origin", "main"]);
+
+    await runGit(repo, ["checkout", "-b", "develop"]);
+    await writeFile(path.join(repo, "develop.txt"), "develop");
+    await runGit(repo, ["add", "develop.txt"]);
+    await runGit(repo, ["commit", "-m", "Develop only"]);
+    await runGit(repo, ["push", "-u", "origin", "develop"]);
+
+    await runGit(repo, ["checkout", "main"]);
+    await writeFile(path.join(repo, "package.json"), JSON.stringify({ name: "branches", version: "1.0.1" }, null, 2));
+    await writeFile(path.join(repo, "main.txt"), "main");
+    await runGit(repo, ["add", "package.json", "main.txt"]);
+    await runGit(repo, ["commit", "-m", "Main release"]);
+    await runGit(repo, ["push"]);
+    await runGit(repo, ["checkout", "develop"]);
+
+    await getRepositoryStatus(repo, root, true);
+    const comparison = await getBranchComparison(repo);
+    expect(comparison).toMatchObject({
+      developRef: "origin/develop",
+      mainRef: "origin/main",
+      developVersion: "1.0.0",
+      mainVersion: "1.0.1",
+      developBehindMain: 1,
+      developAheadMain: 1
+    });
+    expect(comparison?.commitsInDevelopNotMain).toEqual([
+      expect.objectContaining({ subject: "Develop only", files: expect.arrayContaining(["develop.txt"]) })
+    ]);
+    const diff = await getCommitDiff(repo, comparison?.commitsInDevelopNotMain[0].hash ?? "");
+    expect(diff.text).toContain("develop.txt");
+    expect(diff.text).toContain("+develop");
+  });
+
+  it("bumps root package version and stages package.json before committing", async () => {
+    const repo = await initRepo("version-bump");
+    await writeFile(path.join(repo, "package.json"), JSON.stringify({ name: "version-bump", version: "1.2.3" }, null, 2));
+    await stageFiles(repo, root, ["package.json"]);
+    await commit(repo, root, "Add package");
+
+    await writeFile(path.join(repo, "README.md"), "# Test\nchanged\n");
+    await bumpPackageVersion(repo, root);
+
+    const status = await getRepositoryStatus(repo, root, false);
+    expect(status.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "package.json", staged: true }),
+      expect.objectContaining({ path: "README.md", unstaged: true })
+    ]));
+    expect(JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")).version).toBe("1.2.4");
   });
 });

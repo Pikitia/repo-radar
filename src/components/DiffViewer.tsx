@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChangedFile, DiffMode, DiffResult, RepoStatus } from "../types/repo";
-import { parseSideBySideDiff } from "../utils/diffParser";
+import { SideBySideDiff } from "./SideBySideDiff";
 
 type Props = {
   repo: RepoStatus;
@@ -15,7 +15,6 @@ export function DiffViewer({ repo, mode }: Props) {
   }, [repo, mode]);
   const [selected, setSelected] = useState<ChangedFile | null>(files[0] ?? null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
-  const rows = useMemo(() => diff && !diff.isBinary ? parseSideBySideDiff(diff.text, mode) : [], [diff, mode]);
 
   useEffect(() => {
     setSelected(files[0] ?? null);
@@ -56,23 +55,7 @@ export function DiffViewer({ repo, mode }: Props) {
         {!diff && <div className="diff-state">Loading diff...</div>}
         {diff?.error && <div className="diff-state issue-box">{diff.error}</div>}
         {diff?.isBinary && <div className="diff-state">Binary file.</div>}
-        {diff && !diff.isBinary && rows.length === 0 && <div className="diff-state">No textual diff.</div>}
-        {diff && !diff.isBinary && rows.length > 0 && (
-          <div className="side-by-side-diff" role="table" aria-label={`Diff for ${selected?.path ?? "selected file"}`}>
-            <div className="diff-columns" role="row">
-              <span>Original</span>
-              <span>Changed</span>
-            </div>
-            {rows.map((row) => (
-              <div key={row.id} className={`diff-row ${row.kind}`} role="row">
-                <span className="line-number">{row.leftNumber ?? ""}</span>
-                <code className="line-text">{row.leftText || " "}</code>
-                <span className="line-number">{row.rightNumber ?? ""}</span>
-                <code className="line-text">{row.rightText || " "}</code>
-              </div>
-            ))}
-          </div>
-        )}
+        {diff && !diff.isBinary && <SideBySideDiff text={diff.text} mode={mode} label={`Diff for ${selected?.path ?? "selected file"}`} />}
       </section>
     </div>
   );

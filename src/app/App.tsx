@@ -25,14 +25,48 @@ export function App() {
     setLoading(true);
     setMessage(fetch ? "Refreshing repositories..." : "Scanning repositories...");
     try {
-      const next = await window.repoRadar.scanRepositories({
+      const shells = await window.repoRadar.discoverRepositories({
         root: settings.rootFolder,
-        includeNestedRepositories: settings.includeNestedRepositories,
-        fetch
+        includeNestedRepositories: settings.includeNestedRepositories
       });
-      setRepos(next);
-      setSelectedId((current) => current && next.some((repo) => repo.id === current) ? current : next[0]?.id ?? null);
-      setMessage(`${next.length} repositories loaded.`);
+      setRepos(shells);
+      setSelectedId((current) => current && shells.some((repo) => repo.id === current) ? current : shells[0]?.id ?? null);
+      setMessage(`${shells.length} repositories found. Loading status...`);
+
+      await Promise.all(shells.map(async (repo) => {
+        try {
+          const status = await window.repoRadar.refreshRepository(repo.absolutePath, fetch);
+          updateRepo(status);
+          updateRepo({ ...status, branchComparisonLoading: true });
+          try {
+            const comparison = await window.repoRadar.getBranchComparison(repo.absolutePath);
+            updateRepo({
+              ...status,
+              branchComparison: comparison,
+              branchComparisonLoaded: true,
+              branchComparisonLoading: false
+            });
+          } catch (err) {
+            updateRepo({
+              ...status,
+              branchComparison: null,
+              branchComparisonLoaded: true,
+              branchComparisonLoading: false,
+              warnings: [
+                ...status.warnings,
+                { code: "branch-comparison-failed", message: "Could not load Develop/Main comparison.", detail: err instanceof Error ? err.message : String(err) }
+              ]
+            });
+          }
+        } catch (err) {
+          updateRepo({
+            ...repo,
+            statusLoading: false,
+            errors: [{ code: "status-failed", message: "Could not read repository status.", detail: err instanceof Error ? err.message : String(err) }]
+          });
+        }
+      }));
+      setMessage(`${shells.length} repositories loaded.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -60,7 +94,15 @@ export function App() {
   }, [settings.rootFolder, settings.includeNestedRepositories, settings.refreshIntervalMinutes, loading]);
 
   function updateRepo(updated: RepoStatus) {
-    setRepos((current) => current.map((repo) => repo.id === updated.id ? updated : repo));
+    setRepos((current) => current.map((repo) => {
+      if (repo.id !== updated.id) return repo;
+      return {
+        ...updated,
+        branchComparison: updated.branchComparisonLoaded ? updated.branchComparison : repo.branchComparison,
+        branchComparisonLoaded: updated.branchComparisonLoaded ?? repo.branchComparisonLoaded,
+        branchComparisonLoading: updated.branchComparisonLoading ?? repo.branchComparisonLoading
+      };
+    }));
   }
 
   return (

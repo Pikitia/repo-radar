@@ -33,3 +33,14 @@ export async function getDiff(repoPath: string, file: string, mode: DiffMode): P
     error: result.code === 0 ? undefined : result.stderr
   };
 }
+
+export async function getCommitDiff(repoPath: string, hash: string): Promise<DiffResult> {
+  const result = await tryGit(repoPath, ["show", "--no-ext-diff", "--format=", "--patch", "--find-renames", hash]);
+  return {
+    file: hash,
+    mode: "commit",
+    isBinary: isBinaryText(result.stdout),
+    text: result.stdout.trimStart() || result.stderr,
+    error: result.code === 0 ? undefined : result.stderr
+  };
+}

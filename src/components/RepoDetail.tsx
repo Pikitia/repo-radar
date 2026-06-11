@@ -5,6 +5,7 @@ import { Toolbar } from "./Toolbar";
 import { DiffViewer } from "./DiffViewer";
 import { ProjectFilesViewer } from "./ProjectFilesViewer";
 import { CommitDialog } from "./CommitDialog";
+import { BranchComparisonTab } from "./BranchComparisonTab";
 
 type Props = {
   repo: RepoStatus | null;
@@ -12,13 +13,14 @@ type Props = {
   onMessage(message: string): void;
 };
 
-type Tab = "working" | "staged" | "untracked" | "ahead" | "actions" | "project";
+type Tab = "working" | "staged" | "untracked" | "ahead" | "branches" | "actions" | "project";
 
 const tabLabels: Record<Tab, string> = {
   working: "Working Tree",
   staged: "Staged",
   untracked: "Untracked",
   ahead: "Ahead Commits",
+  branches: "Develop/Main",
   actions: "Actions",
   project: "Project Files"
 };
@@ -109,9 +111,11 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
       </nav>
       <section className="tab-body">
         {!tab && <div className="empty-panel">No changed files, ahead commits, or known project files.</div>}
+        {repo.statusLoading && <div className="empty-panel"><span className="mini-spinner" /> Loading repository status...</div>}
         {tab === "working" && <DiffViewer repo={repo} mode="working" />}
         {tab === "staged" && <DiffViewer repo={repo} mode="staged" />}
         {tab === "untracked" && <DiffViewer repo={repo} mode="untracked" />}
+        {tab === "branches" && <BranchComparisonTab repo={repo} onMessage={onMessage} onRepoUpdated={onRepoUpdated} />}
         {tab === "project" && <ProjectFilesViewer repo={repo} />}
         {tab === "actions" && repo.githubActions && (
           <div className="actions-panel">
@@ -120,8 +124,8 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
               <p>{repo.githubActions.runName} #{repo.githubActions.runNumber}</p>
               <p>
                 {repo.githubActions.repository}
-                {repo.githubActions.branch ? ` · ${repo.githubActions.branch}` : ""}
-                {repo.githubActions.updatedAt ? ` · ${new Date(repo.githubActions.updatedAt).toLocaleString()}` : ""}
+                {repo.githubActions.branch ? ` - ${repo.githubActions.branch}` : ""}
+                {repo.githubActions.updatedAt ? ` - ${new Date(repo.githubActions.updatedAt).toLocaleString()}` : ""}
               </p>
               <a href={repo.githubActions.htmlUrl} onClick={(event) => openExternal(event, event.currentTarget.href)}>
                 Open run in GitHub
@@ -156,7 +160,7 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
             {repo.aheadCommits.map((commit) => (
               <article key={commit.hash}>
                 <strong>{commit.subject}</strong>
-                <span>{commit.hash.slice(0, 8)} · {commit.author} · {new Date(commit.date).toLocaleString()}</span>
+                <span>{commit.hash.slice(0, 8)} - {commit.author} - {new Date(commit.date).toLocaleString()}</span>
                 <p>{commit.files.join(", ")}</p>
               </article>
             ))}

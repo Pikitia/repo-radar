@@ -8,11 +8,13 @@ import type { ScanOptions } from "../src/types/api.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { discoverRepositories } from "./git/discovery.js";
 import { getRepositoryStatus } from "./git/status.js";
-import { getDiff } from "./git/diff.js";
+import { getCommitDiff, getDiff } from "./git/diff.js";
 import { getProjectFiles, readProjectFile } from "./git/projectFiles.js";
-import { commit, getGitIdentityBlockers, getRemoteUrl, pull, push, stageFiles, sync, unstageFiles } from "./git/actions.js";
+import { bumpPackageVersion, commit, getGitIdentityBlockers, getRemoteUrl, pull, push, stageFiles, sync, unstageFiles } from "./git/actions.js";
 import { createCommitProvider } from "./aiCommit.js";
 import { tryGit } from "./git/exec.js";
+import { getPackageVersionInfo } from "./git/versionBump.js";
+import { getBranchComparison } from "./git/branchComparison.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
@@ -149,6 +151,10 @@ async function scan(options: ScanOptions): Promise<RepoStatus[]> {
           conflicts: [],
           files: [],
           aheadCommits: [],
+          branchComparison: null,
+          branchComparisonLoaded: false,
+          branchComparisonLoading: false,
+          statusLoading: false,
           projectFiles: [],
           warnings: [],
           errors: [{ code: "status-failed", message: "Could not read repository status.", detail: error instanceof Error ? error.message : String(error) }]
@@ -159,6 +165,40 @@ async function scan(options: ScanOptions): Promise<RepoStatus[]> {
   return statuses.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
+async function discoverRepoShells(root: string, includeNestedRepositories: boolean): Promise<RepoStatus[]> {
+  const repos = await discoverRepositories(root, includeNestedRepositories);
+  return repos.map((repo) => {
+    const relative = path.relative(root, repo) || path.basename(repo);
+    const parent = path.dirname(relative);
+    return {
+      id: path.resolve(repo).toLowerCase(),
+      name: path.basename(repo),
+      absolutePath: path.resolve(repo),
+      relativePath: relative.replaceAll("\\", "/"),
+      parentGroup: parent === "." ? "/" : parent.replaceAll("\\", "/"),
+      branch: null,
+      upstream: null,
+      isDetachedHead: false,
+      hasUnstagedChanges: false,
+      hasStagedChanges: false,
+      hasUntrackedFiles: false,
+      ahead: 0,
+      behind: 0,
+      conflicts: [],
+      files: [],
+      aheadCommits: [],
+      branchComparison: undefined,
+      branchComparisonLoaded: false,
+      branchComparisonLoading: false,
+      statusLoading: true,
+      projectFiles: [],
+      githubActions: null,
+      warnings: [],
+      errors: []
+    };
+  });
+}
+
 function registerIpc() {
   ipcMain.handle("settings:get", () => getSettings());
   ipcMain.handle("settings:update", (_event, settings) => updateSettings(settings));
@@ -167,12 +207,16 @@ function registerIpc() {
     return result.canceled ? null : result.filePaths[0];
   });
   ipcMain.handle("repo:scan", (_event, options: ScanOptions) => scan(options));
+  ipcMain.handle("repo:discover", (_event, options: Omit<ScanOptions, "fetch">) => discoverRepoShells(options.root, options.includeNestedRepositories));
   ipcMain.handle("repo:refresh", (_event, repoPath: string, fetch = true) => getRepositoryStatus(repoPath, rootFolder(), fetch));
+  ipcMain.handle("repo:branchComparison", (_event, repoPath: string) => getBranchComparison(repoPath));
   ipcMain.handle("repo:diff", (_event, repoPath: string, file: string, mode: DiffMode) => getDiff(repoPath, file, mode));
+  ipcMain.handle("repo:commitDiff", (_event, repoPath: string, hash: string) => getCommitDiff(repoPath, hash));
   ipcMain.handle("repo:projectFiles", (_event, repoPath: string) => getProjectFiles(repoPath));
   ipcMain.handle("repo:readProjectFile", (_event, repoPath: string, file: string) => readProjectFile(repoPath, file));
   ipcMain.handle("repo:stage", (_event, repoPath: string, files: string[]) => stageFiles(repoPath, rootFolder(), files));
   ipcMain.handle("repo:unstage", (_event, repoPath: string, files: string[]) => unstageFiles(repoPath, rootFolder(), files));
+  ipcMain.handle("repo:bumpPackageVersion", (_event, repoPath: string) => bumpPackageVersion(repoPath, rootFolder()));
   ipcMain.handle("repo:commit", (_event, repoPath: string, message: string) => commit(repoPath, rootFolder(), message));
   ipcMain.handle("repo:pull", (_event, repoPath: string) => pull(repoPath, rootFolder(), getSettings()));
   ipcMain.handle("repo:push", (_event, repoPath: string) => push(repoPath, rootFolder()));
@@ -189,7 +233,8 @@ function registerIpc() {
       staged: status.files.filter((file) => file.staged).map((file) => file.path),
       unstaged: status.files.filter((file) => file.unstaged).map((file) => file.path),
       untracked: status.files.filter((file) => file.untracked).map((file) => file.path),
-      aiAvailable: await provider.isAvailable()
+      aiAvailable: await provider.isAvailable(),
+      packageVersion: await getPackageVersionInfo(repoPath)
     };
   });
   ipcMain.handle("commit:generateMessage", async (_event, repoPath: string, files: string[]) => {

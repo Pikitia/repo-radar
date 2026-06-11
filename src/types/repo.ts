@@ -24,6 +24,25 @@ export type AheadCommit = {
   files: string[];
 };
 
+export type BranchComparisonCommit = {
+  hash: string;
+  subject: string;
+  body: string;
+  author: string;
+  date: string;
+  files: string[];
+};
+
+export type BranchComparison = {
+  developRef: string;
+  mainRef: string;
+  developVersion: string | null;
+  mainVersion: string | null;
+  developBehindMain: number;
+  developAheadMain: number;
+  commitsInDevelopNotMain: BranchComparisonCommit[];
+};
+
 export type ProjectFile = {
   path: string;
   displayName: string;
@@ -75,6 +94,10 @@ export type RepoStatus = {
   conflicts: string[];
   files: ChangedFile[];
   aheadCommits: AheadCommit[];
+  branchComparison?: BranchComparison | null;
+  branchComparisonLoaded?: boolean;
+  branchComparisonLoading?: boolean;
+  statusLoading?: boolean;
   projectFiles: ProjectFile[];
   githubActions?: GitHubActionsStatus | null;
   warnings: GitIssue[];
@@ -88,7 +111,7 @@ export type DiffMode = "working" | "staged" | "untracked";
 
 export type DiffResult = {
   file: string;
-  mode: DiffMode;
+  mode: DiffMode | "commit";
   text: string;
   isBinary: boolean;
   error?: string;

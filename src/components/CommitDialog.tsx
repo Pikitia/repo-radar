@@ -23,6 +23,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bumpVersion, setBumpVersion] = useState(true);
 
   const stagedSelected = useMemo(() => [...selected].filter((file) => preview?.staged.includes(file)), [selected, preview]);
   const stageableFiles = useMemo(() => [...(preview?.unstaged ?? []), ...(preview?.untracked ?? [])], [preview]);
@@ -34,6 +35,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
   }
 
   useEffect(() => {
+    setBumpVersion(true);
     void loadPreview();
   }, [repo.absolutePath]);
 
@@ -109,6 +111,9 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     setBusy(true);
     setError(null);
     try {
+      if (bumpVersion && preview?.packageVersion) {
+        await window.repoRadar.bumpPackageVersion(repo.absolutePath);
+      }
       const updated = await window.repoRadar.commit(repo.absolutePath, message.trim());
       onCommitted(updated);
       onClose();
@@ -120,7 +125,8 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
   }
 
   const blockers = preview?.blockers ?? [];
-  const canCommit = Boolean(message.trim()) && (preview?.staged.length ?? 0) > 0 && blockers.length === 0 && !busy;
+  const willStageVersion = Boolean(bumpVersion && preview?.packageVersion);
+  const canCommit = Boolean(message.trim()) && ((preview?.staged.length ?? 0) > 0 || willStageVersion) && blockers.length === 0 && !busy;
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
@@ -164,6 +170,14 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
                   </button>
                 </div>
                 {!preview.aiAvailable && <p className="muted">AI generation is unavailable. Manual commit messages still work.</p>}
+                {preview.packageVersion && (
+                  <label className="version-bump-option">
+                    <input type="checkbox" checked={bumpVersion} onChange={(event) => setBumpVersion(event.target.checked)} />
+                    <span>
+                      Bump {preview.packageVersion.path} from {preview.packageVersion.current} to {preview.packageVersion.next}
+                    </span>
+                  </label>
+                )}
                 <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Commit message" />
                 <button className="primary" disabled={!canCommit} onClick={doCommit}>Commit</button>
               </section>

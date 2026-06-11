@@ -1,6 +1,7 @@
 import { runGit, tryGit } from "./exec.js";
 import { getRepositoryStatus } from "./status.js";
 import type { AppSettings } from "../../src/types/settings.js";
+import { bumpPackageVersionFile } from "./versionBump.js";
 
 export async function stageFiles(repoPath: string, rootPath: string, files: string[]) {
   await runGit(repoPath, ["add", "--", ...files]);
@@ -9,6 +10,13 @@ export async function stageFiles(repoPath: string, rootPath: string, files: stri
 
 export async function unstageFiles(repoPath: string, rootPath: string, files: string[]) {
   await runGit(repoPath, ["restore", "--staged", "--", ...files]);
+  return getRepositoryStatus(repoPath, rootPath, false);
+}
+
+export async function bumpPackageVersion(repoPath: string, rootPath: string) {
+  const version = await bumpPackageVersionFile(repoPath);
+  if (!version) throw new Error("Could not bump package.json version. Ensure the repository has a root package.json with a semver version.");
+  await runGit(repoPath, ["add", "--", version.path]);
   return getRepositoryStatus(repoPath, rootPath, false);
 }
 

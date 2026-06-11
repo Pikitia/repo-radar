@@ -16,6 +16,7 @@ export function hasRunningGitHubActions(repo: RepoStatus): boolean {
 }
 
 export function repoMatchesFilter(repo: RepoStatus, filter: RepoFilter): boolean {
+  if (repo.statusLoading) return filter === "all";
   if (filter === "changed") return isChanged(repo);
   if (filter === "clean") return !isChanged(repo) && repo.ahead === 0 && repo.behind === 0 && repo.errors.length === 0;
   if (filter === "ahead") return repo.ahead > 0 && repo.behind === 0;
@@ -27,9 +28,11 @@ export function repoMatchesFilter(repo: RepoStatus, filter: RepoFilter): boolean
 
 export function sidebarIndicators(repo: RepoStatus): string[] {
   const indicators: string[] = [];
+  if (repo.statusLoading) return indicators;
   if (repo.errors.length > 0) indicators.push("Error");
   if (hasFailedGitHubActions(repo)) indicators.push("CI");
   else if (hasRunningGitHubActions(repo)) indicators.push("CI...");
+  if ((repo.branchComparison?.developAheadMain ?? 0) > 0) indicators.push(`Dev+${repo.branchComparison?.developAheadMain ?? 0}`);
   if (isChanged(repo)) indicators.push("Changed");
   if (!isChanged(repo) && repo.errors.length === 0) indicators.push("Clean");
   if (repo.ahead > 0 && repo.behind > 0) indicators.push("Diverged");
@@ -73,12 +76,13 @@ export function actionAvailability(repo: RepoStatus | null): ActionAvailability 
   };
 }
 
-export function visibleTabs(repo: RepoStatus): Array<"working" | "staged" | "untracked" | "ahead" | "actions" | "project"> {
-  const tabs: Array<"working" | "staged" | "untracked" | "ahead" | "actions" | "project"> = [];
+export function visibleTabs(repo: RepoStatus): Array<"working" | "staged" | "untracked" | "ahead" | "branches" | "actions" | "project"> {
+  const tabs: Array<"working" | "staged" | "untracked" | "ahead" | "branches" | "actions" | "project"> = [];
   if (repo.files.some((file) => file.unstaged && !file.untracked)) tabs.push("working");
   if (repo.files.some((file) => file.staged)) tabs.push("staged");
   if (repo.files.some((file) => file.untracked)) tabs.push("untracked");
   if (repo.aheadCommits.length > 0) tabs.push("ahead");
+  if (!repo.statusLoading) tabs.push("branches");
   if (hasFailedGitHubActions(repo) || hasRunningGitHubActions(repo)) tabs.push("actions");
   if (repo.projectFiles.length > 0) tabs.push("project");
   return tabs;
