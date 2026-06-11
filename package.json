@@ -1,0 +1,65 @@
+{
+  "name": "repo-radar",
+  "version": "1.0.0",
+  "description": "Windows desktop GUI for monitoring Git status across local repositories.",
+  "main": "dist-electron/electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "electron": "npm run build:electron && electron .",
+    "build": "npm run typecheck && vite build && npm run build:electron",
+    "build:electron": "tsc -p tsconfig.electron.json && esbuild dist-electron/electron/preload.js --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/electron/preload.cjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:electron-smoke": "node tests/electron-smoke.mjs",
+    "package": "npm run build && electron-builder --win portable",
+    "lint": "eslint ."
+  },
+  "build": {
+    "appId": "dev.repo-radar.app",
+    "productName": "Repo Radar",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.5.2",
+    "electron-store": "^10.1.0",
+    "lucide-react": "^0.468.0",
+    "marked": "^15.0.3",
+    "vite": "^6.0.7"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^2.5.0",
+    "@eslint/js": "^9.17.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitest/coverage-v8": "^2.1.8",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.17.0",
+    "jsdom": "^25.0.1",
+    "playwright": "^1.49.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^2.1.8"
+  }
+}
