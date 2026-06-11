@@ -37,7 +37,20 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     chooseRootFolder: vi.fn().mockResolvedValue("C:/root"),
     scanRepositories: vi.fn().mockResolvedValue([sampleRepo]),
     refreshRepository: vi.fn().mockResolvedValue(sampleRepo),
-    getDiff: vi.fn().mockResolvedValue({ file: "src/app.ts", mode: "working", text: "diff --git a/src/app.ts b/src/app.ts", isBinary: false }),
+    getDiff: vi.fn().mockResolvedValue({
+      file: "src/app.ts",
+      mode: "working",
+      text: [
+        "diff --git a/src/app.ts b/src/app.ts",
+        "index 1111111..2222222 100644",
+        "--- a/src/app.ts",
+        "+++ b/src/app.ts",
+        "@@ -1 +1 @@",
+        "-old line",
+        "+new line"
+      ].join("\n"),
+      isBinary: false
+    }),
     getProjectFiles: vi.fn().mockResolvedValue(sampleRepo.projectFiles),
     readProjectFile: vi.fn().mockResolvedValue("# Repo One"),
     getCommitPreview: vi.fn().mockResolvedValue({ blockers: [], staged: [], unstaged: ["src/app.ts"], untracked: ["notes.txt"], aiAvailable: false }),
@@ -73,7 +86,10 @@ describe("App UI smoke", () => {
     expect(await screen.findByText("Working Tree")).toBeInTheDocument();
     expect(screen.queryByText("Staged")).not.toBeInTheDocument();
     expect(screen.getByText("Project Files")).toBeInTheDocument();
-    expect(await screen.findByText("diff --git a/src/app.ts b/src/app.ts")).toBeInTheDocument();
+    expect(await screen.findByText("Original")).toBeInTheDocument();
+    expect(screen.getAllByText("Changed").length).toBeGreaterThan(0);
+    expect(screen.getByText("old line")).toBeInTheDocument();
+    expect(screen.getByText("new line")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Project Files"));
     expect(await screen.findByText("Repo One")).toBeInTheDocument();

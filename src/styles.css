@@ -77,12 +77,75 @@ textarea { min-height: 210px; resize: vertical; width: 100%; }
 .tabs { display: flex; gap: 6px; padding: 10px 18px 0; }
 .tab-body { min-height: 0; flex: 1; padding: 10px 18px 18px; }
 .empty-panel { display: grid; place-items: center; height: 100%; color: #aeb6bf; border: 1px dashed #3a4049; border-radius: 8px; }
-.diff-layout { display: grid; grid-template-columns: 285px 1fr; gap: 10px; height: 100%; min-height: 0; }
+.diff-layout { display: grid; grid-template-columns: 220px 1fr; gap: 10px; height: 100%; min-height: 0; }
 .file-list { border: 1px solid #303640; border-radius: 8px; overflow: auto; background: #1d2025; padding: 6px; }
 .file-list button { width: 100%; min-height: 34px; height: auto; justify-content: space-between; margin-bottom: 4px; text-align: left; }
-.file-list button span { overflow-wrap: anywhere; }
+.file-list button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-list .selected { border-color: #7aa2d8; background: #263241; }
 .file-list b { color: #aab2bd; font-size: 11px; }
+.diff-viewer {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #303640;
+  border-radius: 8px;
+  background: #111317;
+}
+.diff-header {
+  min-height: 45px;
+  padding: 7px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #303640;
+  background: #1b1f25;
+}
+.diff-header div { min-width: 0; display: grid; gap: 2px; }
+.diff-header strong, .diff-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-header span { color: #9aa3ad; font-size: 12px; }
+.diff-header b { flex: 0 0 auto; color: #aab2bd; font-size: 11px; background: #303640; border-radius: 4px; padding: 2px 6px; }
+.diff-state { margin: 12px; color: #aeb6bf; }
+.side-by-side-diff {
+  min-height: 0;
+  overflow: auto;
+  font: 12px/1.45 Consolas, "Cascadia Mono", monospace;
+}
+.diff-columns, .diff-row {
+  display: grid;
+  grid-template-columns: 54px minmax(360px, 1fr) 54px minmax(360px, 1fr);
+}
+.diff-columns {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1b1f25;
+  color: #aab2bd;
+  border-bottom: 1px solid #303640;
+}
+.diff-columns span { padding: 5px 8px; }
+.diff-columns span:first-child { grid-column: 1 / 3; }
+.diff-columns span:last-child { grid-column: 3 / 5; border-left: 1px solid #303640; }
+.diff-row { min-height: 22px; border-bottom: 1px solid rgba(48, 54, 64, 0.45); }
+.diff-row.hunk { background: #243349; color: #b9d7ff; }
+.diff-row.added .line-text:nth-child(4), .diff-row.changed .line-text:nth-child(4) { background: #183e2a; color: #c6f6d5; }
+.diff-row.removed .line-text:nth-child(2), .diff-row.changed .line-text:nth-child(2) { background: #54262c; color: #ffdce1; }
+.line-number {
+  user-select: none;
+  color: #7e8792;
+  background: #171a20;
+  text-align: right;
+  padding: 2px 8px;
+  border-right: 1px solid #303640;
+}
+.line-number:nth-child(3) { border-left: 1px solid #303640; }
+.line-text {
+  white-space: pre;
+  padding: 2px 8px;
+  color: #d8dde3;
+}
 .diff-view, .project-view pre {
   margin: 0;
   height: 100%;
