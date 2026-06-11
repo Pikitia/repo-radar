@@ -73,7 +73,20 @@ function launchDetached(command: string, args: string[], options: { cwd?: string
   });
 }
 
+function toVSCodeFileUri(repoPath: string): string {
+  const normalized = path.resolve(repoPath).replaceAll("\\", "/");
+  return `vscode://file/${encodeURI(normalized)}`;
+}
+
 async function openVSCode(repoPath: string): Promise<void> {
+  const uriErrors: string[] = [];
+  try {
+    await shell.openExternal(toVSCodeFileUri(repoPath));
+    return;
+  } catch (error) {
+    uriErrors.push(error instanceof Error ? error.message : String(error));
+  }
+
   const localAppData = process.env.LOCALAPPDATA;
   const programFiles = process.env.ProgramFiles;
   const programFilesX86 = process.env["ProgramFiles(x86)"];
@@ -100,7 +113,7 @@ async function openVSCode(repoPath: string): Promise<void> {
     }
   }
 
-  throw new Error(`Could not open VS Code. Install the VS Code command line launcher or add it to PATH. Tried: ${errors.join("; ")}`);
+  throw new Error(`Could not open VS Code. The vscode:// protocol failed (${uriErrors.join("; ")}). Install the VS Code command line launcher or add it to PATH. Tried: ${errors.join("; ")}`);
 }
 
 async function scan(options: ScanOptions): Promise<RepoStatus[]> {

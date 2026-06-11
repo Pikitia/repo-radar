@@ -84,22 +84,6 @@ function drawRing(buffer, size, cx, cy, radius, width, color) {
   }
 }
 
-function drawWedge(buffer, size, cx, cy, radius, startAngle, endAngle, color) {
-  for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y += 1) {
-    for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x += 1) {
-      const dx = x + 0.5 - cx;
-      const dy = y + 0.5 - cy;
-      const dist = Math.hypot(dx, dy);
-      let angle = Math.atan2(dy, dx);
-      if (angle < 0) angle += Math.PI * 2;
-      if (dist <= radius && angle >= startAngle && angle <= endAngle) {
-        const radial = 1 - dist / radius;
-        blendPixel(buffer, size, x, y, [...color.slice(0, 3), Math.round(color[3] * (0.18 + radial * 0.55))]);
-      }
-    }
-  }
-}
-
 function render(size) {
   const scale = size / 256;
   const buffer = new Uint8Array(size * size * 4);
@@ -117,31 +101,24 @@ function render(size) {
   }
 
   const s = (n) => n * scale;
-  drawWedge(buffer, size, s(128), s(132), s(92), Math.PI * 1.61, Math.PI * 2.02, rgba("#6ee7b7", 115));
-  drawRing(buffer, size, s(128), s(132), s(82), s(6), rgba("#5f7f95", 130));
-  drawRing(buffer, size, s(128), s(132), s(54), s(5), rgba("#7ba2b5", 120));
-  drawRing(buffer, size, s(128), s(132), s(27), s(4), rgba("#b7d3db", 95));
-  drawLine(buffer, size, s(128), s(132), s(207), s(82), s(7), rgba("#76f4c7", 235));
+  drawRing(buffer, size, s(128), s(132), s(76), s(12), rgba("#48677e", 220));
+  drawLine(buffer, size, s(128), s(132), s(190), s(78), s(16), rgba("#6ee7b7", 245));
+  drawLine(buffer, size, s(73), s(176), s(193), s(178), s(12), rgba("#38bdf8", 165));
 
   const line = rgba("#d8f6ff", 245);
-  drawLine(buffer, size, s(83), s(163), s(83), s(111), s(10), line);
-  drawLine(buffer, size, s(83), s(111), s(124), s(111), s(10), line);
-  drawLine(buffer, size, s(124), s(111), s(155), s(78), s(10), line);
-  drawLine(buffer, size, s(83), s(142), s(126), s(142), s(10), line);
-  drawLine(buffer, size, s(126), s(142), s(165), s(179), s(10), line);
+  drawLine(buffer, size, s(91), s(169), s(91), s(101), s(18), line);
+  drawLine(buffer, size, s(91), s(132), s(144), s(132), s(18), line);
+  drawLine(buffer, size, s(144), s(132), s(177), s(99), s(18), line);
 
   const nodes = [
-    [83, 163, "#23c55e", "#f7fff9"],
-    [83, 111, "#38bdf8", "#f7fcff"],
-    [155, 78, "#f8c14a", "#fff8dc"],
-    [165, 179, "#f07178", "#fff2f4"]
+    [91, 169, "#23c55e", "#f7fff9"],
+    [91, 101, "#38bdf8", "#f7fcff"],
+    [177, 99, "#f8c14a", "#fff8dc"]
   ];
   for (const [x, y, outer, inner] of nodes) {
-    drawCircle(buffer, size, s(x), s(y), s(15), rgba(outer));
-    drawCircle(buffer, size, s(x), s(y), s(6), rgba(inner));
+    drawCircle(buffer, size, s(x), s(y), s(22), rgba(outer));
+    drawCircle(buffer, size, s(x), s(y), s(8), rgba(inner));
   }
-
-  drawLine(buffer, size, s(64), s(202), s(193), s(202), s(7), rgba("#6ee7b7", 125));
   return buffer;
 }
 

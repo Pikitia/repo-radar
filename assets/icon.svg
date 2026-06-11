@@ -1,40 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Repo Radar icon">
   <defs>
-    <linearGradient id="bg" x1="28" y1="20" x2="220" y2="236" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#223246"/>
-      <stop offset="0.55" stop-color="#16222f"/>
+    <linearGradient id="bg" x1="32" y1="24" x2="218" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#24364a"/>
       <stop offset="1" stop-color="#101820"/>
     </linearGradient>
-    <linearGradient id="sweep" x1="128" y1="132" x2="201" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#6ee7b7" stop-opacity="0.78"/>
-      <stop offset="1" stop-color="#38bdf8" stop-opacity="0.2"/>
-    </linearGradient>
-    <filter id="soft">
-      <feGaussianBlur stdDeviation="1.5"/>
-    </filter>
   </defs>
   <rect x="14" y="14" width="228" height="228" rx="48" fill="url(#bg)"/>
-  <path d="M128 132 L207 82 A92 92 0 0 1 217 133 Z" fill="url(#sweep)"/>
-  <g fill="none" stroke-linecap="round">
-    <circle cx="128" cy="132" r="82" stroke="#46627a" stroke-width="6" opacity="0.58"/>
-    <circle cx="128" cy="132" r="54" stroke="#5f7f95" stroke-width="5" opacity="0.5"/>
-    <circle cx="128" cy="132" r="27" stroke="#8fb2c1" stroke-width="4" opacity="0.42"/>
-    <path d="M128 132 L207 82" stroke="#76f4c7" stroke-width="7"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="128" cy="132" r="76" stroke="#48677e" stroke-width="12"/>
+    <path d="M128 132 L190 78" stroke="#6ee7b7" stroke-width="16"/>
+    <path d="M73 176 C102 207 158 212 193 178" stroke="#38bdf8" stroke-width="12" opacity="0.78"/>
   </g>
-  <g fill="none" stroke="#d8f6ff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10">
-    <path d="M83 163 V111"/>
-    <path d="M83 111 H124 C145 111 155 96 155 78"/>
-    <path d="M83 142 H126 C148 142 165 158 165 179"/>
+  <g fill="none" stroke="#e8fbff" stroke-linecap="round" stroke-linejoin="round" stroke-width="18">
+    <path d="M91 169 V101"/>
+    <path d="M91 132 H144"/>
+    <path d="M144 132 L177 99"/>
   </g>
-  <g>
-    <circle cx="83" cy="163" r="16" fill="#23c55e"/>
-    <circle cx="83" cy="111" r="15" fill="#38bdf8"/>
-    <circle cx="155" cy="78" r="15" fill="#f8c14a"/>
-    <circle cx="165" cy="179" r="15" fill="#f07178"/>
-    <circle cx="83" cy="163" r="6" fill="#f7fff9"/>
-    <circle cx="83" cy="111" r="6" fill="#f7fcff"/>
-    <circle cx="155" cy="78" r="6" fill="#fff8dc"/>
-    <circle cx="165" cy="179" r="6" fill="#fff2f4"/>
-  </g>
-  <path d="M64 202 C98 220 156 223 193 202" stroke="#6ee7b7" stroke-width="8" stroke-linecap="round" opacity="0.75" fill="none" filter="url(#soft)"/>
+  <circle cx="91" cy="169" r="22" fill="#23c55e"/>
+  <circle cx="91" cy="101" r="22" fill="#38bdf8"/>
+  <circle cx="177" cy="99" r="22" fill="#f8c14a"/>
 </svg>
