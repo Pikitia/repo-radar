@@ -3,6 +3,7 @@ import path from "node:path";
 import type { AheadCommit, ChangedFile, ChangeKind, GitIssue, RepoStatus } from "../../src/types/repo.js";
 import { getProjectFiles } from "./projectFiles.js";
 import { runGit, tryGit } from "./exec.js";
+import { getGitHubActionsStatus } from "./githubActions.js";
 
 export type ParsedStatus = {
   branch: string | null;
@@ -149,6 +150,14 @@ export async function getRepositoryStatus(repoPath: string, rootPath: string, fe
   const relativePath = path.relative(rootPath, repoPath) || path.basename(repoPath);
   const parent = path.dirname(relativePath);
   const projectFiles = await getProjectFiles(repoPath);
+  const githubActions = await getGitHubActionsStatus(repoPath, parsed.branch);
+  if (githubActions?.error) {
+    issues.warnings.push({
+      code: "github-actions-unavailable",
+      message: `GitHub Actions status unavailable for ${githubActions.repository}.`,
+      detail: githubActions.error
+    });
+  }
 
   return {
     id: path.resolve(repoPath).toLowerCase(),
@@ -168,6 +177,7 @@ export async function getRepositoryStatus(repoPath: string, rootPath: string, fe
     files: parsed.files,
     aheadCommits: await getAheadCommits(repoPath, parsed.upstream),
     projectFiles,
+    githubActions,
     warnings: issues.warnings,
     errors: issues.errors,
     lastFetchedAt: fetchFirst ? new Date().toISOString() : undefined

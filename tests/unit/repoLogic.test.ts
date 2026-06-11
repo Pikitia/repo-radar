@@ -55,4 +55,46 @@ describe("repo display logic", () => {
     }));
     expect(tabs).toEqual(["staged", "untracked", "ahead", "project"]);
   });
+
+  it("shows CI indicators and Actions tab for failed GitHub Actions", () => {
+    const failed = repo({
+      githubActions: {
+        repository: "owner/repo",
+        branch: "main",
+        status: "completed",
+        conclusion: "failure",
+        workflowName: "CI",
+        runName: "Build",
+        runNumber: 42,
+        htmlUrl: "https://github.com/owner/repo/actions/runs/1",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:01:00Z",
+        failedJobs: []
+      }
+    });
+
+    expect(sidebarIndicators(failed)).toContain("CI");
+    expect(visibleTabs(failed)).toContain("actions");
+  });
+
+  it("shows running CI indicators and Actions tab for active GitHub Actions", () => {
+    const running = repo({
+      githubActions: {
+        repository: "owner/repo",
+        branch: "main",
+        status: "in_progress",
+        conclusion: null,
+        workflowName: "CI",
+        runName: "Build",
+        runNumber: 43,
+        htmlUrl: "https://github.com/owner/repo/actions/runs/2",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:01:00Z",
+        failedJobs: []
+      }
+    });
+
+    expect(sidebarIndicators(running)).toContain("CI...");
+    expect(visibleTabs(running)).toContain("actions");
+  });
 });

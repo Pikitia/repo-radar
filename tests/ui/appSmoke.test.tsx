@@ -25,6 +25,7 @@ const sampleRepo: RepoStatus = {
   files: [{ path: "src/app.ts", kind: "modified", staged: false, unstaged: true, untracked: false, conflicted: false }],
   aheadCommits: [],
   projectFiles: [{ path: "README.md", displayName: "README.md", kind: "markdown" }],
+  githubActions: null,
   warnings: [],
   errors: []
 };
@@ -39,7 +40,7 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     getDiff: vi.fn().mockResolvedValue({ file: "src/app.ts", mode: "working", text: "diff --git a/src/app.ts b/src/app.ts", isBinary: false }),
     getProjectFiles: vi.fn().mockResolvedValue(sampleRepo.projectFiles),
     readProjectFile: vi.fn().mockResolvedValue("# Repo One"),
-    getCommitPreview: vi.fn().mockResolvedValue({ blockers: [], staged: [], unstaged: ["src/app.ts"], untracked: [], aiAvailable: false }),
+    getCommitPreview: vi.fn().mockResolvedValue({ blockers: [], staged: [], unstaged: ["src/app.ts"], untracked: ["notes.txt"], aiAvailable: false }),
     stageFiles: vi.fn().mockResolvedValue({ ...sampleRepo, hasStagedChanges: true }),
     unstageFiles: vi.fn().mockResolvedValue(sampleRepo),
     generateCommitMessage: vi.fn().mockResolvedValue("Update app"),
@@ -78,6 +79,9 @@ describe("App UI smoke", () => {
 
     fireEvent.click(screen.getByText("Commit"));
     expect(await screen.findByText("AI generation is unavailable. Manual commit messages still work.")).toBeInTheDocument();
+    expect(screen.getAllByText("Stage all").length).toBe(2);
+    expect(screen.getByText("Stage all changes")).toBeInTheDocument();
+    expect(screen.getByText("Unstage all")).toBeDisabled();
     const commitButtons = screen.getAllByText("Commit");
     expect(commitButtons[commitButtons.length - 1]).toBeDisabled();
   });

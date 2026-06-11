@@ -67,6 +67,35 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
               </select>
             </label>
             <label>
+              Refresh interval minutes
+              <input
+                type="number"
+                min="0"
+                max="120"
+                step="1"
+                value={settings.refreshIntervalMinutes}
+                onChange={(event) => setSettings({ ...settings, refreshIntervalMinutes: Math.max(0, Number(event.target.value) || 0) })}
+              />
+            </label>
+            <label>
+              GitHub token source
+              <select value={settings.github.tokenSource} onChange={(event) => setSettings({ ...settings, github: { ...settings.github, tokenSource: event.target.value as AppSettings["github"]["tokenSource"] } })}>
+                <option value="environment">Environment variable</option>
+                <option value="settings">Settings</option>
+              </select>
+            </label>
+            {settings.github.tokenSource === "settings" && (
+              <label>
+                GitHub token
+                <input type="password" value={settings.github.token ?? ""} onChange={(event) => setSettings({ ...settings, github: { ...settings.github, token: event.target.value } })} />
+              </label>
+            )}
+            <div className="debug-box">
+              <strong>GitHub Actions access</strong>
+              <span>Private repositories need a GitHub token with repository access and Actions read permission.</span>
+              <span>Environment mode reads GITHUB_TOKEN or GH_TOKEN when Repo Radar starts.</span>
+            </div>
+            <label>
               AI provider
               <select value={settings.ai.provider} onChange={(event) => setSettings({ ...settings, ai: { ...settings.ai, provider: event.target.value as AppSettings["ai"]["provider"] } })}>
                 <option value="none">None</option>

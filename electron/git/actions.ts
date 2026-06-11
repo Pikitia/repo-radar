@@ -14,7 +14,7 @@ export async function unstageFiles(repoPath: string, rootPath: string, files: st
 
 export async function commit(repoPath: string, rootPath: string, message: string) {
   await runGit(repoPath, ["commit", "-m", message]);
-  return getRepositoryStatus(repoPath, rootPath, false);
+  return getRepositoryStatus(repoPath, rootPath, true);
 }
 
 export async function pull(repoPath: string, rootPath: string, settings: AppSettings) {
@@ -23,12 +23,12 @@ export async function pull(repoPath: string, rootPath: string, settings: AppSett
   if (settings.pullStrategy === "merge") args.push("--no-rebase");
   if (settings.pullStrategy === "rebase") args.push("--rebase");
   await runGit(repoPath, args, 60000);
-  return getRepositoryStatus(repoPath, rootPath, false);
+  return getRepositoryStatus(repoPath, rootPath, true);
 }
 
 export async function push(repoPath: string, rootPath: string) {
   await runGit(repoPath, ["push"], 60000);
-  return getRepositoryStatus(repoPath, rootPath, false);
+  return getRepositoryStatus(repoPath, rootPath, true);
 }
 
 export async function sync(repoPath: string, rootPath: string, settings: AppSettings) {
@@ -42,7 +42,7 @@ export async function sync(repoPath: string, rootPath: string, settings: AppSett
   if (status.ahead > 0) {
     status = await push(repoPath, rootPath);
   }
-  return status;
+  return getRepositoryStatus(repoPath, rootPath, true);
 }
 
 export async function getRemoteUrl(repoPath: string): Promise<string | null> {

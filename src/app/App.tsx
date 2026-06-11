@@ -51,6 +51,14 @@ export function App() {
     if (settings.rootFolder) void refresh(false);
   }, [settings.rootFolder, settings.includeNestedRepositories]);
 
+  useEffect(() => {
+    if (!settings.rootFolder || settings.refreshIntervalMinutes <= 0 || loading) return;
+    const timer = window.setInterval(() => {
+      void refresh(true);
+    }, settings.refreshIntervalMinutes * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [settings.rootFolder, settings.includeNestedRepositories, settings.refreshIntervalMinutes, loading]);
+
   function updateRepo(updated: RepoStatus) {
     setRepos((current) => current.map((repo) => repo.id === updated.id ? updated : repo));
   }

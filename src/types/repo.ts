@@ -30,6 +30,34 @@ export type ProjectFile = {
   kind: "markdown" | "text";
 };
 
+export type GitHubActionFailedStep = {
+  name: string;
+  conclusion: string | null;
+  number: number;
+};
+
+export type GitHubActionFailedJob = {
+  name: string;
+  conclusion: string | null;
+  htmlUrl: string;
+  steps: GitHubActionFailedStep[];
+};
+
+export type GitHubActionsStatus = {
+  repository: string;
+  branch: string | null;
+  status: string | null;
+  conclusion: string | null;
+  workflowName: string;
+  runName: string;
+  runNumber: number;
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  failedJobs: GitHubActionFailedJob[];
+  error?: string;
+};
+
 export type RepoStatus = {
   id: string;
   name: string;
@@ -48,6 +76,7 @@ export type RepoStatus = {
   files: ChangedFile[];
   aheadCommits: AheadCommit[];
   projectFiles: ProjectFile[];
+  githubActions?: GitHubActionsStatus | null;
   warnings: GitIssue[];
   errors: GitIssue[];
   lastFetchedAt?: string;

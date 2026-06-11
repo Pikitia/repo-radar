@@ -25,6 +25,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
   const [busy, setBusy] = useState(false);
 
   const stagedSelected = useMemo(() => [...selected].filter((file) => preview?.staged.includes(file)), [selected, preview]);
+  const stageableFiles = useMemo(() => [...(preview?.unstaged ?? []), ...(preview?.untracked ?? [])], [preview]);
 
   async function loadPreview() {
     const next = await window.repoRadar.getCommitPreview(repo.absolutePath);
@@ -59,17 +60,36 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     }
   }
 
-  async function unstageSelected() {
+  async function stageFiles(files: string[]) {
+    if (files.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      await window.repoRadar.unstageFiles(repo.absolutePath, stagedSelected);
+      await window.repoRadar.stageFiles(repo.absolutePath, files);
       await loadPreview();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function unstageFiles(files: string[]) {
+    if (files.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await window.repoRadar.unstageFiles(repo.absolutePath, files);
+      await loadPreview();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unstageSelected() {
+    await unstageFiles(stagedSelected);
   }
 
   async function generateMessage() {
@@ -115,13 +135,23 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
             {error && <div className="issue-box">{error}</div>}
             <div className="commit-grid">
               <section>
-                <h3>Staged</h3>
+                <div className="file-group-header">
+                  <h3>Staged</h3>
+                  <button disabled={busy || preview.staged.length === 0} onClick={() => unstageFiles(preview.staged)}>Unstage all</button>
+                </div>
                 {preview.staged.length ? fileCheckboxes(preview.staged, selected, toggle) : <p>No staged files.</p>}
-                <h3>Unstaged</h3>
+                <div className="file-group-header">
+                  <h3>Unstaged</h3>
+                  <button disabled={busy || preview.unstaged.length === 0} onClick={() => stageFiles(preview.unstaged)}>Stage all</button>
+                </div>
                 {preview.unstaged.length ? fileCheckboxes(preview.unstaged, selected, toggle) : <p>No unstaged files.</p>}
-                <h3>Untracked</h3>
+                <div className="file-group-header">
+                  <h3>Untracked</h3>
+                  <button disabled={busy || preview.untracked.length === 0} onClick={() => stageFiles(preview.untracked)}>Stage all</button>
+                </div>
                 {preview.untracked.length ? fileCheckboxes(preview.untracked, selected, toggle) : <p>No untracked files.</p>}
                 <div className="row-actions">
+                  <button disabled={busy || stageableFiles.length === 0} onClick={() => stageFiles(stageableFiles)}>Stage all changes</button>
                   <button disabled={busy || selected.size === 0} onClick={stageSelected}>Stage selected</button>
                   <button disabled={busy || stagedSelected.length === 0} onClick={unstageSelected}>Unstage selected</button>
                 </div>

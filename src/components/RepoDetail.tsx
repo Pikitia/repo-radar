@@ -12,13 +12,14 @@ type Props = {
   onMessage(message: string): void;
 };
 
-type Tab = "working" | "staged" | "untracked" | "ahead" | "project";
+type Tab = "working" | "staged" | "untracked" | "ahead" | "actions" | "project";
 
 const tabLabels: Record<Tab, string> = {
   working: "Working Tree",
   staged: "Staged",
   untracked: "Untracked",
   ahead: "Ahead Commits",
+  actions: "Actions",
   project: "Project Files"
 };
 
@@ -82,11 +83,15 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
         <span>Ahead <b>{repo.ahead}</b></span>
         <span>Behind <b>{repo.behind}</b></span>
         <span>Files <b>{repo.files.length}</b></span>
+        {repo.githubActions && !repo.githubActions.error && <span>Actions <b>{repo.githubActions.conclusion ?? repo.githubActions.status ?? "unknown"}</b></span>}
       </section>
       {(repo.errors.length > 0 || repo.warnings.length > 0) && (
         <section className="issues">
           {[...repo.errors, ...repo.warnings].map((issue) => (
-            <p key={`${issue.code}-${issue.message}`} title={issue.detail}>{issue.message}</p>
+            <p key={`${issue.code}-${issue.message}`} title={issue.detail}>
+              <strong>{issue.message}</strong>
+              {issue.detail && <span>{issue.detail}</span>}
+            </p>
           ))}
         </section>
       )}
@@ -101,6 +106,40 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
         {tab === "staged" && <DiffViewer repo={repo} mode="staged" />}
         {tab === "untracked" && <DiffViewer repo={repo} mode="untracked" />}
         {tab === "project" && <ProjectFilesViewer repo={repo} />}
+        {tab === "actions" && repo.githubActions && (
+          <div className="actions-panel">
+            <article className="actions-run">
+              <h3>{repo.githubActions.workflowName}</h3>
+              <p>{repo.githubActions.runName} #{repo.githubActions.runNumber}</p>
+              <p>
+                {repo.githubActions.repository}
+                {repo.githubActions.branch ? ` · ${repo.githubActions.branch}` : ""}
+                {repo.githubActions.updatedAt ? ` · ${new Date(repo.githubActions.updatedAt).toLocaleString()}` : ""}
+              </p>
+              <a href={repo.githubActions.htmlUrl}>Open run in GitHub</a>
+            </article>
+            {repo.githubActions.failedJobs.length === 0 ? (
+              <div className="empty-panel">
+                {repo.githubActions.status === "completed"
+                  ? "The latest workflow failed, but GitHub did not return failed job details."
+                  : "The latest workflow is still running."}
+              </div>
+            ) : repo.githubActions.failedJobs.map((job) => (
+              <article key={job.htmlUrl} className="actions-job">
+                <h3>{job.name}</h3>
+                <p>Conclusion: {job.conclusion ?? "unknown"}</p>
+                <a href={job.htmlUrl}>Open job log in GitHub</a>
+                {job.steps.length > 0 && (
+                  <ul>
+                    {job.steps.map((step) => (
+                      <li key={`${step.number}-${step.name}`}>{step.number}. {step.name} ({step.conclusion ?? "unknown"})</li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
         {tab === "ahead" && (
           <div className="commit-list">
             {repo.aheadCommits.map((commit) => (

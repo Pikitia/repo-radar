@@ -8,6 +8,8 @@ function statusClass(indicator: string): string {
   if (indicator === "Clean") return "status-clean";
   if (indicator === "Changed") return "status-changed";
   if (indicator === "Diverged") return "status-diverged";
+  if (indicator === "CI") return "status-ci";
+  if (indicator === "CI...") return "status-ci-running";
   if (indicator === "Error") return "status-error";
   if (indicator === "Warn") return "status-warn";
   if (indicator.startsWith("+")) return "status-ahead";

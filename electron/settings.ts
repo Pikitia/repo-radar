@@ -16,6 +16,10 @@ export function getSettings(): AppSettings {
   return {
     ...defaultSettings,
     ...store.store,
+    github: {
+      ...defaultSettings.github,
+      ...(store.store.github ?? {})
+    },
     ai: {
       ...defaultSettings.ai,
       ...(store.store.ai ?? {})
@@ -28,6 +32,10 @@ export function updateSettings(partial: Partial<AppSettings>): AppSettings {
   const next: AppSettings = {
     ...current,
     ...partial,
+    github: {
+      ...current.github,
+      ...(partial.github ?? {})
+    },
     ai: {
       ...current.ai,
       ...(partial.ai ?? {})
