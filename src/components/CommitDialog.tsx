@@ -107,15 +107,24 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     }
   }
 
-  async function doCommit() {
+  async function doCommit(pushAfterCommit = false) {
     setBusy(true);
     setError(null);
     try {
       if (bumpVersion && preview?.packageVersion) {
         await window.repoRadar.bumpPackageVersion(repo.absolutePath);
       }
-      const updated = await window.repoRadar.commit(repo.absolutePath, message.trim());
-      onCommitted(updated);
+      const committed = await window.repoRadar.commit(repo.absolutePath, message.trim());
+      onCommitted(committed);
+      if (pushAfterCommit) {
+        try {
+          const pushed = await window.repoRadar.push(repo.absolutePath);
+          onCommitted(pushed);
+        } catch (err) {
+          setError(`Commit succeeded, but push failed: ${err instanceof Error ? err.message : String(err)}`);
+          return;
+        }
+      }
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -179,7 +188,10 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
                   </label>
                 )}
                 <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Commit message" />
-                <button className="primary" disabled={!canCommit} onClick={doCommit}>Commit</button>
+                <div className="commit-actions">
+                  <button className="primary" disabled={!canCommit} onClick={() => doCommit(false)}>Commit</button>
+                  <button className="primary" disabled={!canCommit} onClick={() => doCommit(true)}>Commit and Push</button>
+                </div>
               </section>
             </div>
           </>

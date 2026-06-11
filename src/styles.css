@@ -205,9 +205,10 @@ textarea { min-height: 210px; resize: vertical; width: 100%; }
 .row-actions, .message-header, .path-picker, .file-group-header { display: flex; gap: 8px; align-items: center; }
 .file-group-header { justify-content: space-between; margin-top: 10px; }
 .file-group-header button { height: 24px; font-size: 12px; padding: 0 8px; }
-.row-actions { flex-wrap: wrap; margin-top: 10px; }
+.row-actions, .commit-actions { flex-wrap: wrap; margin-top: 10px; }
+.commit-actions { display: flex; gap: 8px; }
 .message-header { justify-content: space-between; margin-bottom: 8px; }
-.primary { background: #39638f; border-color: #6189b7; margin-top: 10px; }
+.primary { background: #39638f; border-color: #6189b7; }
 .settings-modal { width: min(720px, calc(100vw - 48px)); }
 .settings-grid { display: grid; gap: 12px; padding: 14px; }
 .settings-grid label { display: grid; gap: 5px; color: #cdd3da; }

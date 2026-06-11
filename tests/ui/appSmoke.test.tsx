@@ -107,6 +107,27 @@ describe("App UI smoke", () => {
     expect(commitButtons[commitButtons.length - 1]).toBeDisabled();
   });
 
+  it("commits and pushes from the commit dialog", async () => {
+    const api = installApi();
+    vi.mocked(api.getCommitPreview).mockResolvedValue({
+      blockers: [],
+      staged: ["src/app.ts"],
+      unstaged: [],
+      untracked: [],
+      aiAvailable: false,
+      packageVersion: null
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByText("Commit"));
+    fireEvent.change(await screen.findByPlaceholderText("Commit message"), { target: { value: "Update app" } });
+    fireEvent.click(screen.getByText("Commit and Push"));
+
+    await waitFor(() => expect(api.commit).toHaveBeenCalledWith(sampleRepo.absolutePath, "Update app"));
+    expect(api.push).toHaveBeenCalledWith(sampleRepo.absolutePath);
+    expect(vi.mocked(api.commit).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.push).mock.invocationCallOrder[0]);
+  });
+
   it("opens settings on first run without a root folder", async () => {
     installApi({ ...defaultSettings, rootFolder: null });
     render(<App />);
