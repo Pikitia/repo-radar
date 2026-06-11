@@ -27,6 +27,7 @@ const api: RepoRadarApi = {
   openTerminal: (path: string) => invoke("open:terminal", path),
   copyPath: (path: string) => invoke("open:copyPath", path),
   openRemote: (path: string) => invoke("open:remote", path),
+  openExternal: (url: string) => invoke("open:external", url),
   getDebugInfo: () => invoke("debug:info")
 };
 

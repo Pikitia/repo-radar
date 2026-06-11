@@ -53,6 +53,7 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     openTerminal: vi.fn().mockResolvedValue(undefined),
     copyPath: vi.fn().mockResolvedValue(undefined),
     openRemote: vi.fn().mockResolvedValue(undefined),
+    openExternal: vi.fn().mockResolvedValue(undefined),
     getDebugInfo: vi.fn().mockResolvedValue({ gitPath: "git", version: "git version test" })
   };
   window.repoRadar = api;

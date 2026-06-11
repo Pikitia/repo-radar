@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import type { RepoStatus } from "../types/repo";
 import { visibleTabs } from "../state/repoLogic";
 import { Toolbar } from "./Toolbar";
@@ -53,6 +53,13 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function openExternal(event: MouseEvent<HTMLAnchorElement>, url: string) {
+    event.preventDefault();
+    void window.repoRadar.openExternal(url).catch((error: unknown) => {
+      onMessage(error instanceof Error ? error.message : String(error));
+    });
   }
 
   return (
@@ -116,7 +123,9 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
                 {repo.githubActions.branch ? ` · ${repo.githubActions.branch}` : ""}
                 {repo.githubActions.updatedAt ? ` · ${new Date(repo.githubActions.updatedAt).toLocaleString()}` : ""}
               </p>
-              <a href={repo.githubActions.htmlUrl}>Open run in GitHub</a>
+              <a href={repo.githubActions.htmlUrl} onClick={(event) => openExternal(event, event.currentTarget.href)}>
+                Open run in GitHub
+              </a>
             </article>
             {repo.githubActions.failedJobs.length === 0 ? (
               <div className="empty-panel">
@@ -128,7 +137,9 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
               <article key={job.htmlUrl} className="actions-job">
                 <h3>{job.name}</h3>
                 <p>Conclusion: {job.conclusion ?? "unknown"}</p>
-                <a href={job.htmlUrl}>Open job log in GitHub</a>
+                <a href={job.htmlUrl} onClick={(event) => openExternal(event, event.currentTarget.href)}>
+                  Open job log in GitHub
+                </a>
                 {job.steps.length > 0 && (
                   <ul>
                     {job.steps.map((step) => (

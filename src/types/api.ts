@@ -37,6 +37,7 @@ export type RepoRadarApi = {
   openTerminal(path: string): Promise<void>;
   copyPath(path: string): Promise<void>;
   openRemote(path: string): Promise<void>;
+  openExternal(url: string): Promise<void>;
   getDebugInfo(): Promise<{ gitPath: string; version: string }>;
 };
 

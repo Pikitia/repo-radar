@@ -78,6 +78,14 @@ function toVSCodeFileUri(repoPath: string): string {
   return `vscode://file/${encodeURI(normalized)}`;
 }
 
+function assertHttpUrl(url: string): string {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("Only HTTP(S) URLs can be opened.");
+  }
+  return parsed.toString();
+}
+
 async function openVSCode(repoPath: string): Promise<void> {
   const uriErrors: string[] = [];
   try {
@@ -200,6 +208,7 @@ function registerIpc() {
       : remote.replace(/\.git$/, "");
     await shell.openExternal(httpsUrl);
   });
+  ipcMain.handle("open:external", (_event, url: string) => shell.openExternal(assertHttpUrl(url)));
   ipcMain.handle("debug:info", async () => {
     const version = await tryGit(process.cwd(), ["--version"]);
     const pathResult = await tryGit(process.cwd(), ["--exec-path"]);
