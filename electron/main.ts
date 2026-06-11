@@ -28,6 +28,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 640,
     title: "Repo Radar",
+    icon: path.join(app.getAppPath(), "assets", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
