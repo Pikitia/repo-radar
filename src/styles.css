@@ -207,6 +207,9 @@ textarea { min-height: 210px; resize: vertical; width: 100%; }
 .file-group-header button { height: 24px; font-size: 12px; padding: 0 8px; }
 .row-actions, .commit-actions { flex-wrap: wrap; margin-top: 10px; }
 .commit-actions { display: flex; gap: 8px; }
+.do-everything-actions { display: grid; gap: 6px; margin-top: 8px; }
+.do-everything-button { width: 100%; min-height: 34px; height: auto; }
+.do-everything-status { margin: 0; color: #aab2bd; font-size: 12px; }
 .message-header { justify-content: space-between; margin-bottom: 8px; }
 .primary { background: #39638f; border-color: #6189b7; }
 .settings-modal { width: min(720px, calc(100vw - 48px)); }

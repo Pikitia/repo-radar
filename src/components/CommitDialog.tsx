@@ -24,6 +24,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [bumpVersion, setBumpVersion] = useState(true);
+  const [doEverythingStep, setDoEverythingStep] = useState<string | null>(null);
 
   const stagedSelected = useMemo(() => [...selected].filter((file) => preview?.staged.includes(file)), [selected, preview]);
   const stageableFiles = useMemo(() => [...(preview?.unstaged ?? []), ...(preview?.untracked ?? [])], [preview]);
@@ -32,6 +33,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     const next = await window.repoRadar.getCommitPreview(repo.absolutePath);
     setPreview(next);
     setSelected(new Set(next.staged));
+    return next;
   }
 
   useEffect(() => {
@@ -52,6 +54,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     if (!preview) return;
     setBusy(true);
     setError(null);
+    setDoEverythingStep(null);
     try {
       await window.repoRadar.stageFiles(repo.absolutePath, [...selected].filter((file) => !preview.staged.includes(file)));
       await loadPreview();
@@ -66,6 +69,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     if (files.length === 0) return;
     setBusy(true);
     setError(null);
+    setDoEverythingStep(null);
     try {
       await window.repoRadar.stageFiles(repo.absolutePath, files);
       await loadPreview();
@@ -80,6 +84,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     if (files.length === 0) return;
     setBusy(true);
     setError(null);
+    setDoEverythingStep(null);
     try {
       await window.repoRadar.unstageFiles(repo.absolutePath, files);
       await loadPreview();
@@ -98,6 +103,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     if (!preview) return;
     setBusy(true);
     setError(null);
+    setDoEverythingStep(null);
     try {
       setMessage(await window.repoRadar.generateCommitMessage(repo.absolutePath, preview.staged));
     } catch (err) {
@@ -110,6 +116,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
   async function doCommit(pushAfterCommit = false) {
     setBusy(true);
     setError(null);
+    setDoEverythingStep(null);
     try {
       if (bumpVersion && preview?.packageVersion) {
         await window.repoRadar.bumpPackageVersion(repo.absolutePath);
@@ -133,9 +140,50 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
     }
   }
 
+  async function doEverything() {
+    if (!preview) return;
+    setBusy(true);
+    setError(null);
+    setBumpVersion(true);
+    try {
+      let nextPreview = preview;
+      const filesToStage = [...new Set([...nextPreview.unstaged, ...nextPreview.untracked])];
+      if (filesToStage.length > 0) {
+        setDoEverythingStep(`Staging ${filesToStage.length} file${filesToStage.length === 1 ? "" : "s"}...`);
+        await window.repoRadar.stageFiles(repo.absolutePath, filesToStage);
+        nextPreview = await loadPreview();
+      }
+
+      if (nextPreview.packageVersion) {
+        setDoEverythingStep(`Bumping ${nextPreview.packageVersion.path} to ${nextPreview.packageVersion.next}...`);
+        await window.repoRadar.bumpPackageVersion(repo.absolutePath);
+        nextPreview = await loadPreview();
+      }
+
+      setDoEverythingStep("Generating AI commit message...");
+      const generatedMessage = await window.repoRadar.generateCommitMessage(repo.absolutePath, nextPreview.staged);
+      setMessage(generatedMessage);
+
+      setDoEverythingStep("Committing changes...");
+      const committed = await window.repoRadar.commit(repo.absolutePath, generatedMessage.trim());
+      onCommitted(committed);
+
+      setDoEverythingStep("Pushing commit...");
+      const pushed = await window.repoRadar.push(repo.absolutePath);
+      onCommitted(pushed);
+      setDoEverythingStep("Done.");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const blockers = preview?.blockers ?? [];
   const willStageVersion = Boolean(bumpVersion && preview?.packageVersion);
   const canCommit = Boolean(message.trim()) && ((preview?.staged.length ?? 0) > 0 || willStageVersion) && blockers.length === 0 && !busy;
+  const canDoEverything = Boolean(preview?.aiAvailable) && ((preview?.staged.length ?? 0) > 0 || stageableFiles.length > 0 || Boolean(preview?.packageVersion)) && blockers.length === 0 && !busy;
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
@@ -191,6 +239,12 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
                 <div className="commit-actions">
                   <button className="primary" disabled={!canCommit} onClick={() => doCommit(false)}>Commit</button>
                   <button className="primary" disabled={!canCommit} onClick={() => doCommit(true)}>Commit and Push</button>
+                </div>
+                <div className="do-everything-actions">
+                  <button className="primary do-everything-button" disabled={!canDoEverything} title={preview.aiAvailable ? "Stage all changes, bump version, generate an AI message, commit, and push." : "AI provider unavailable."} onClick={doEverything}>
+                    Do Everything
+                  </button>
+                  {doEverythingStep && <p className="do-everything-status">{doEverythingStep}</p>}
                 </div>
               </section>
             </div>

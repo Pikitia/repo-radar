@@ -128,6 +128,61 @@ describe("App UI smoke", () => {
     expect(vi.mocked(api.commit).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.push).mock.invocationCallOrder[0]);
   });
 
+  it("does every commit step in order from the commit dialog", async () => {
+    const api = installApi();
+    vi.mocked(api.getCommitPreview)
+      .mockResolvedValueOnce({
+        blockers: [],
+        staged: [],
+        unstaged: ["src/app.ts"],
+        untracked: ["notes.txt"],
+        aiAvailable: true,
+        packageVersion: { path: "package.json", current: "1.0.2", next: "1.0.3" }
+      })
+      .mockResolvedValueOnce({
+        blockers: [],
+        staged: ["src/app.ts", "notes.txt"],
+        unstaged: [],
+        untracked: [],
+        aiAvailable: true,
+        packageVersion: { path: "package.json", current: "1.0.2", next: "1.0.3" }
+      })
+      .mockResolvedValueOnce({
+        blockers: [],
+        staged: ["src/app.ts", "notes.txt", "package.json"],
+        unstaged: [],
+        untracked: [],
+        aiAvailable: true,
+        packageVersion: { path: "package.json", current: "1.0.3", next: "1.0.4" }
+      });
+    vi.mocked(api.generateCommitMessage).mockResolvedValue("Update app");
+    vi.mocked(api.stageFiles).mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { ...sampleRepo, hasStagedChanges: true };
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByText("Commit"));
+    fireEvent.click(await screen.findByText("Do Everything"));
+
+    expect(await screen.findByText("Staging 2 files...")).toBeInTheDocument();
+    await waitFor(() => expect(api.push).toHaveBeenCalledWith(sampleRepo.absolutePath));
+    expect(api.stageFiles).toHaveBeenCalledWith(sampleRepo.absolutePath, ["src/app.ts", "notes.txt"]);
+    expect(api.bumpPackageVersion).toHaveBeenCalledWith(sampleRepo.absolutePath);
+    expect(api.generateCommitMessage).toHaveBeenCalledWith(sampleRepo.absolutePath, ["src/app.ts", "notes.txt", "package.json"]);
+    expect(api.commit).toHaveBeenCalledWith(sampleRepo.absolutePath, "Update app");
+
+    const stageOrder = vi.mocked(api.stageFiles).mock.invocationCallOrder[0];
+    const bumpOrder = vi.mocked(api.bumpPackageVersion).mock.invocationCallOrder[0];
+    const messageOrder = vi.mocked(api.generateCommitMessage).mock.invocationCallOrder[0];
+    const commitOrder = vi.mocked(api.commit).mock.invocationCallOrder[0];
+    const pushOrder = vi.mocked(api.push).mock.invocationCallOrder[0];
+    expect(stageOrder).toBeLessThan(bumpOrder);
+    expect(bumpOrder).toBeLessThan(messageOrder);
+    expect(messageOrder).toBeLessThan(commitOrder);
+    expect(commitOrder).toBeLessThan(pushOrder);
+  });
+
   it("opens settings on first run without a root folder", async () => {
     installApi({ ...defaultSettings, rootFolder: null });
     render(<App />);
