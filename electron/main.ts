@@ -75,6 +75,35 @@ function launchDetached(command: string, args: string[], options: { cwd?: string
   });
 }
 
+async function openTerminal(repoPath: string): Promise<void> {
+  const targetPath = path.resolve(repoPath);
+  if (!existsSync(targetPath)) {
+    throw new Error(`Repository folder does not exist: ${targetPath}`);
+  }
+
+  const candidates = process.platform === "win32"
+    ? [
+        { command: "wt.exe", args: ["-d", targetPath] },
+        { command: "cmd.exe", args: ["/K"] },
+        { command: "powershell.exe", args: ["-NoExit", "-Command", "Set-Location -LiteralPath $args[0]", targetPath] }
+      ]
+    : [
+        { command: process.env.SHELL ?? "sh", args: [] }
+      ];
+
+  const errors: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      await launchDetached(candidate.command, candidate.args, { cwd: targetPath, windowsHide: false });
+      return;
+    } catch (error) {
+      errors.push(`${candidate.command}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  throw new Error(`Could not open terminal in ${targetPath}. Tried: ${errors.join("; ")}`);
+}
+
 function toVSCodeFileUri(repoPath: string): string {
   const normalized = path.resolve(repoPath).replaceAll("\\", "/");
   return `vscode://file/${encodeURI(normalized)}`;
@@ -243,7 +272,7 @@ function registerIpc() {
   });
   ipcMain.handle("open:vscode", (_event, repoPath: string) => openVSCode(repoPath));
   ipcMain.handle("open:explorer", (_event, repoPath: string) => shell.openPath(repoPath));
-  ipcMain.handle("open:terminal", (_event, repoPath: string) => launchDetached("cmd.exe", ["/K", "cd", "/d", repoPath], { windowsHide: false }));
+  ipcMain.handle("open:terminal", (_event, repoPath: string) => openTerminal(repoPath));
   ipcMain.handle("open:copyPath", (_event, repoPath: string) => clipboard.writeText(repoPath));
   ipcMain.handle("open:remote", async (_event, repoPath: string) => {
     const remote = await getRemoteUrl(repoPath);
