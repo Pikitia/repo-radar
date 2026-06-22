@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { IpcRendererEvent } from "electron";
 import type { AppSettings } from "../src/types/settings.js";
 import type { DiffMode } from "../src/types/repo.js";
-import type { ScanOptions, RepoRadarApi } from "../src/types/api.js";
+import type { NpmCommandEvent, NpmScriptCommand, ScanOptions, RepoRadarApi } from "../src/types/api.js";
 
 const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args) as Promise<T>;
 
@@ -26,6 +27,13 @@ const api: RepoRadarApi = {
   pull: (path: string) => invoke("repo:pull", path),
   push: (path: string) => invoke("repo:push", path),
   sync: (path: string) => invoke("repo:sync", path),
+  getNpmVerifyScript: (path: string) => invoke<NpmScriptCommand | null>("repo:npmVerifyScript", path),
+  startNpmCommand: (path: string, runId: string, command: "update" | NpmScriptCommand) => invoke("repo:npmCommand", path, runId, command),
+  onNpmCommandEvent: (callback: (event: NpmCommandEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, commandEvent: NpmCommandEvent) => callback(commandEvent);
+    ipcRenderer.on("repo:npmCommand:event", listener);
+    return () => ipcRenderer.off("repo:npmCommand:event", listener);
+  },
   openVSCode: (path: string) => invoke("open:vscode", path),
   openExplorer: (path: string) => invoke("open:explorer", path),
   openTerminal: (path: string) => invoke("open:terminal", path),

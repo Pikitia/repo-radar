@@ -1,8 +1,8 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/app/App";
-import type { RepoRadarApi } from "../../src/types/api";
+import type { NpmCommandEvent, RepoRadarApi } from "../../src/types/api";
 import type { RepoStatus } from "../../src/types/repo";
 import type { AppSettings } from "../../src/types/settings";
 import { defaultSettings } from "../../src/types/settings";
@@ -65,6 +65,9 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     pull: vi.fn().mockResolvedValue(sampleRepo),
     push: vi.fn().mockResolvedValue(sampleRepo),
     sync: vi.fn().mockResolvedValue(sampleRepo),
+    getNpmVerifyScript: vi.fn().mockResolvedValue("verify"),
+    startNpmCommand: vi.fn().mockResolvedValue(undefined),
+    onNpmCommandEvent: vi.fn().mockReturnValue(() => undefined),
     openVSCode: vi.fn().mockResolvedValue(undefined),
     openExplorer: vi.fn().mockResolvedValue(undefined),
     openTerminal: vi.fn().mockResolvedValue(undefined),
@@ -181,6 +184,57 @@ describe("App UI smoke", () => {
     expect(bumpOrder).toBeLessThan(messageOrder);
     expect(messageOrder).toBeLessThan(commitOrder);
     expect(commitOrder).toBeLessThan(pushOrder);
+  });
+
+  it("runs npm update in a closeable output tab and prevents duplicate runs", async () => {
+    const api = installApi();
+    let commandListener: ((event: NpmCommandEvent) => void) | null = null;
+    vi.mocked(api.onNpmCommandEvent).mockImplementation((callback) => {
+      commandListener = callback;
+      return () => undefined;
+    });
+    render(<App />);
+
+    const updateButton = await screen.findByText("Update Dependencies");
+    await screen.findByText("Original");
+    await screen.findByText("new line");
+    fireEvent.click(updateButton);
+
+    await waitFor(() => expect(api.startNpmCommand).toHaveBeenCalledWith(sampleRepo.absolutePath, expect.any(String), "update"));
+    const runId = vi.mocked(api.startNpmCommand).mock.calls[0][1];
+    expect(updateButton).toBeDisabled();
+    expect(await screen.findByText("npm update...")).toBeInTheDocument();
+
+    act(() => {
+      commandListener?.({ runId, repoPath: sampleRepo.absolutePath, type: "output", stream: "stdout", text: "updated 2 packages\n" });
+    });
+    expect(await screen.findByText(/updated 2 packages/)).toBeInTheDocument();
+    act(() => {
+      commandListener?.({ runId, repoPath: sampleRepo.absolutePath, type: "complete", command: "update", displayCommand: "npm update", exitCode: 0 });
+    });
+
+    await waitFor(() => expect(updateButton).not.toBeDisabled());
+    expect(screen.getByText(/npm update exited with code 0\./)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByTitle("Close npm command output")[0]);
+    expect(screen.queryByText(/npm update exited with code 0\./)).not.toBeInTheDocument();
+  });
+
+  it("runs the preferred verify script and hides verify when no script exists", async () => {
+    const api = installApi();
+    render(<App />);
+
+    const verifyButton = await screen.findByText("Verify");
+    fireEvent.click(verifyButton);
+    await waitFor(() => expect(api.startNpmCommand).toHaveBeenCalledWith(sampleRepo.absolutePath, expect.any(String), "verify"));
+
+    cleanup();
+    const noScriptApi = installApi();
+    vi.mocked(noScriptApi.getNpmVerifyScript).mockResolvedValue(null);
+    render(<App />);
+
+    await screen.findByText("Update Dependencies");
+    await waitFor(() => expect(noScriptApi.getNpmVerifyScript).toHaveBeenCalledWith(sampleRepo.absolutePath));
+    expect(screen.queryByText("Verify")).not.toBeInTheDocument();
   });
 
   it("opens settings on first run without a root folder", async () => {

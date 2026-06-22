@@ -1,4 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
+import { X } from "lucide-react";
+import type { NpmScriptCommand } from "../types/api";
 import type { RepoStatus } from "../types/repo";
 import { visibleTabs } from "../state/repoLogic";
 import { Toolbar } from "./Toolbar";
@@ -13,9 +15,23 @@ type Props = {
   onMessage(message: string): void;
 };
 
-type Tab = "working" | "staged" | "untracked" | "ahead" | "branches" | "actions" | "project";
+type StaticTab = "working" | "staged" | "untracked" | "ahead" | "branches" | "actions" | "project";
+type Tab = StaticTab | `npm-command:${string}`;
 
-const tabLabels: Record<Tab, string> = {
+type NpmCommandTab = {
+  id: string;
+  repoId: string;
+  repoPath: string;
+  command: "update" | NpmScriptCommand;
+  label: string;
+  displayCommand: string;
+  output: string;
+  running: boolean;
+  exitCode: number | null;
+  error?: string;
+};
+
+const tabLabels: Record<StaticTab, string> = {
   working: "Working Tree",
   staged: "Staged",
   untracked: "Untracked",
@@ -29,16 +45,64 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
   const [tab, setTab] = useState<Tab | null>(null);
   const [busy, setBusy] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
+  const [npmCommandTabs, setNpmCommandTabs] = useState<NpmCommandTab[]>([]);
+  const [verifyScript, setVerifyScript] = useState<NpmScriptCommand | null>(null);
 
-  const tabs = repo ? visibleTabs(repo) : [];
+  const tabs: StaticTab[] = repo ? visibleTabs(repo) : [];
+  const repoNpmCommandTabs = repo ? npmCommandTabs.filter((item) => item.repoId === repo.id) : [];
+  const npmCommandRunning = repoNpmCommandTabs.some((item) => item.running);
 
   useEffect(() => {
     if (!repo) {
       setTab(null);
       return;
     }
-    if (!tab || !tabs.includes(tab)) setTab(tabs[0] ?? null);
-  }, [repo?.id, tabs.join("|")]);
+    const commandTabs = repoNpmCommandTabs.map((item) => npmCommandTabId(item.id));
+    if (!tab || (!tabs.includes(tab as StaticTab) && !commandTabs.some((item) => item === tab))) {
+      setTab(tabs[0] ?? commandTabs[0] ?? null);
+    }
+  }, [repo?.id, tabs.join("|"), repoNpmCommandTabs.map((item) => item.id).join("|")]);
+
+  useEffect(() => {
+    if (!repo) {
+      setVerifyScript(null);
+      return;
+    }
+    let cancelled = false;
+    setVerifyScript(null);
+    void window.repoRadar.getNpmVerifyScript(repo.absolutePath)
+      .then((script) => {
+        if (!cancelled) setVerifyScript(script);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setVerifyScript(null);
+          onMessage(error instanceof Error ? error.message : String(error));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo?.id, repo?.absolutePath, onMessage]);
+
+  useEffect(() => window.repoRadar.onNpmCommandEvent((event) => {
+    if (event.type === "output") {
+      setNpmCommandTabs((current) => current.map((item) => (
+        item.id === event.runId ? { ...item, output: item.output + event.text } : item
+      )));
+      return;
+    }
+
+    setNpmCommandTabs((current) => current.map((item) => {
+      if (item.id !== event.runId) return item;
+      const status = event.error
+        ? `\nFailed to run ${item.displayCommand}: ${event.error}\n`
+        : `\n${item.displayCommand} exited with code ${event.exitCode ?? "unknown"}.\n`;
+      return { ...item, output: item.output + status, running: false, exitCode: event.exitCode, error: event.error };
+    }));
+    const label = event.displayCommand;
+    onMessage(event.error ? `${label} failed: ${event.error}` : `${label} finished with exit code ${event.exitCode ?? "unknown"}.`);
+  }), [onMessage]);
 
   if (!repo) {
     return <main className="detail empty-detail">Select a repository or configure a root folder.</main>;
@@ -64,6 +128,64 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
     });
   }
 
+  function npmCommandTabId(runId: string): `npm-command:${string}` {
+    return `npm-command:${runId}`;
+  }
+
+  function activeNpmCommandTab(): NpmCommandTab | null {
+    if (!tab?.startsWith("npm-command:")) return null;
+    const id = tab.slice("npm-command:".length);
+    return npmCommandTabs.find((item) => item.id === id) ?? null;
+  }
+
+  function closeNpmCommandTab(runId: string) {
+    setNpmCommandTabs((current) => current.filter((item) => item.id !== runId));
+    if (tab === npmCommandTabId(runId)) {
+      setTab(tabs[0] ?? null);
+    }
+  }
+
+  async function runNpmCommand(command: "update" | NpmScriptCommand) {
+    if (!repo) return;
+    const existing = repoNpmCommandTabs.find((item) => item.running);
+    if (existing) {
+      setTab(npmCommandTabId(existing.id));
+      return;
+    }
+
+    const displayCommand = command === "update" ? "npm update" : `npm run ${command}`;
+    const label = command === "update" ? "npm update" : `npm run ${command}`;
+    const runId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const nextTab: NpmCommandTab = {
+      id: runId,
+      repoId: repo.id,
+      repoPath: repo.absolutePath,
+      command,
+      label,
+      displayCommand,
+      output: `> ${displayCommand}\n\n`,
+      running: true,
+      exitCode: null
+    };
+    setNpmCommandTabs((current) => [...current, nextTab]);
+    setTab(npmCommandTabId(runId));
+
+    try {
+      await window.repoRadar.startNpmCommand(repo.absolutePath, runId, command);
+      onMessage(`${label} started.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setNpmCommandTabs((current) => current.map((item) => (
+        item.id === runId
+          ? { ...item, output: `${item.output}Failed to start ${displayCommand}: ${message}\n`, running: false, error: message }
+          : item
+      )));
+      onMessage(message);
+    }
+  }
+
+  const selectedNpmCommandTab = activeNpmCommandTab();
+
   return (
     <main className="detail">
       <header className="detail-header">
@@ -80,6 +202,10 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
         onPush={() => runAction(() => window.repoRadar.push(repo.absolutePath), "Push complete.")}
         onSync={() => runAction(() => window.repoRadar.sync(repo.absolutePath), "Sync complete.")}
         onRefresh={() => runAction(() => window.repoRadar.refreshRepository(repo.absolutePath, true), "Repository refreshed.")}
+        onNpmUpdate={() => runNpmCommand("update")}
+        onNpmVerify={verifyScript ? () => runNpmCommand(verifyScript) : undefined}
+        npmCommandRunning={npmCommandRunning}
+        verifyScript={verifyScript}
         onVSCode={() => runAction(() => window.repoRadar.openVSCode(repo.absolutePath), "Opened VS Code.")}
         onExplorer={() => runAction(() => window.repoRadar.openExplorer(repo.absolutePath), "Opened Explorer.")}
         onTerminal={() => runAction(() => window.repoRadar.openTerminal(repo.absolutePath), "Opened terminal.")}
@@ -107,6 +233,23 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
       <nav className="tabs">
         {tabs.map((item) => (
           <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{tabLabels[item]}</button>
+        ))}
+        {repoNpmCommandTabs.map((item) => (
+          <button key={item.id} className={tab === npmCommandTabId(item.id) ? "active tab-with-close" : "tab-with-close"} onClick={() => setTab(npmCommandTabId(item.id))}>
+            <span>{item.running ? `${item.label}...` : item.label}</span>
+            {!item.running && (
+              <span
+                className="tab-close"
+                title="Close npm command output"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeNpmCommandTab(item.id);
+                }}
+              >
+                <X size={13} />
+              </span>
+            )}
+          </button>
         ))}
       </nav>
       <section className="tab-body">
@@ -153,6 +296,15 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
                 )}
               </article>
             ))}
+          </div>
+        )}
+        {selectedNpmCommandTab && (
+          <div className="command-output">
+            <div className="command-output-toolbar">
+              <strong>{selectedNpmCommandTab.running ? `Running ${selectedNpmCommandTab.label}` : `${selectedNpmCommandTab.label} complete`}</strong>
+              <button title="Close npm command output" disabled={selectedNpmCommandTab.running} onClick={() => closeNpmCommandTab(selectedNpmCommandTab.id)}><X size={14} /> Close</button>
+            </div>
+            <pre>{selectedNpmCommandTab.output || "Waiting for output..."}</pre>
           </div>
         )}
         {tab === "ahead" && (

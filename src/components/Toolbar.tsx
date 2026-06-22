@@ -1,15 +1,20 @@
-import { Code2, Copy, FolderOpen, GitCommit, GitPullRequest, Globe, RefreshCw, Terminal, Upload, RotateCw } from "lucide-react";
+import { CheckCircle2, Code2, Copy, Download, FolderOpen, GitCommit, GitPullRequest, Globe, RefreshCw, Terminal, Upload, RotateCw } from "lucide-react";
+import type { NpmScriptCommand } from "../types/api";
 import type { RepoStatus } from "../types/repo";
 import { actionAvailability } from "../state/repoLogic";
 
 type Props = {
   repo: RepoStatus;
   busy: boolean;
+  npmCommandRunning: boolean;
+  verifyScript: NpmScriptCommand | null;
   onCommit(): void;
   onPull(): void;
   onPush(): void;
   onSync(): void;
   onRefresh(): void;
+  onNpmUpdate(): void;
+  onNpmVerify?(): void;
   onVSCode(): void;
   onExplorer(): void;
   onTerminal(): void;
@@ -26,6 +31,22 @@ export function Toolbar(props: Props) {
       <button title={availability.reasons.push ?? "Push"} disabled={!availability.push || props.busy} onClick={props.onPush}><Upload size={15} /> Push</button>
       <button title={availability.reasons.sync ?? "Sync"} disabled={!availability.sync || props.busy} onClick={props.onSync}><RotateCw size={15} /> Sync</button>
       <button title="Refresh repository" disabled={props.busy} onClick={props.onRefresh}><RefreshCw size={15} /> Refresh</button>
+      <button
+        title={props.npmCommandRunning ? "An npm command is already running for this project" : "Run npm update"}
+        disabled={props.busy || props.npmCommandRunning}
+        onClick={props.onNpmUpdate}
+      >
+        <Download size={15} /> Update Dependencies
+      </button>
+      {props.verifyScript && props.onNpmVerify && (
+        <button
+          title={props.npmCommandRunning ? "An npm command is already running for this project" : `Run npm run ${props.verifyScript}`}
+          disabled={props.busy || props.npmCommandRunning}
+          onClick={props.onNpmVerify}
+        >
+          <CheckCircle2 size={15} /> Verify
+        </button>
+      )}
       <span className="toolbar-separator" />
       <button title="Open in VS Code" onClick={props.onVSCode}><Code2 size={15} /></button>
       <button title="Open in Explorer" onClick={props.onExplorer}><FolderOpen size={15} /></button>

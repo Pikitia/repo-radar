@@ -1,10 +1,12 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import type { DiffMode, RepoStatus } from "../src/types/repo.js";
-import type { ScanOptions } from "../src/types/api.js";
+import type { NpmCommandEvent, NpmScriptCommand, ScanOptions } from "../src/types/api.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { discoverRepositories } from "./git/discovery.js";
 import { getRepositoryStatus } from "./git/status.js";
@@ -18,6 +20,7 @@ import { getBranchComparison } from "./git/branchComparison.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
+const runningNpmCommands = new Map<string, ChildProcess>();
 
 if (process.env.REPO_RADAR_USER_DATA) {
   app.setPath("userData", process.env.REPO_RADAR_USER_DATA);
@@ -155,6 +158,88 @@ async function openVSCode(repoPath: string): Promise<void> {
   throw new Error(`Could not open VS Code. The vscode:// protocol failed (${uriErrors.join("; ")}). Install the VS Code command line launcher or add it to PATH. Tried: ${errors.join("; ")}`);
 }
 
+function npmCommandKey(repoPath: string): string {
+  return path.resolve(repoPath).toLowerCase();
+}
+
+function sendNpmCommandEvent(event: IpcMainInvokeEvent, commandEvent: NpmCommandEvent): void {
+  event.sender.send("repo:npmCommand:event", commandEvent);
+}
+
+async function getNpmVerifyScript(repoPath: string): Promise<NpmScriptCommand | null> {
+  const targetPath = path.resolve(repoPath);
+  if (!existsSync(targetPath)) {
+    throw new Error(`Repository folder does not exist: ${targetPath}`);
+  }
+
+  try {
+    const raw = await readFile(path.join(targetPath, "package.json"), "utf8");
+    const packageJson = JSON.parse(raw) as { scripts?: Record<string, unknown> };
+    if (typeof packageJson.scripts?.verify === "string") return "verify";
+    if (typeof packageJson.scripts?.test === "string") return "test";
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function npmCommand(commandName: "update" | NpmScriptCommand): { command: string; args: string[]; display: string } {
+  const npmArgs = commandName === "update" ? ["update"] : ["run", commandName];
+  const display = `npm ${npmArgs.join(" ")}`;
+  if (process.platform === "win32") {
+    return { command: process.env.ComSpec ?? "cmd.exe", args: ["/d", "/s", "/c", display], display };
+  }
+  return { command: "npm", args: npmArgs, display };
+}
+
+async function startNpmCommand(event: IpcMainInvokeEvent, repoPath: string, runId: string, commandName: "update" | NpmScriptCommand): Promise<void> {
+  const targetPath = path.resolve(repoPath);
+  if (!existsSync(targetPath)) {
+    throw new Error(`Repository folder does not exist: ${targetPath}`);
+  }
+
+  if (commandName !== "update") {
+    const availableScript = await getNpmVerifyScript(targetPath);
+    if (availableScript !== commandName) {
+      throw new Error(`npm run ${commandName} is not available for this project.`);
+    }
+  }
+
+  const key = npmCommandKey(targetPath);
+  if (runningNpmCommands.has(key)) {
+    throw new Error("An npm command is already running for this project.");
+  }
+
+  const command = npmCommand(commandName);
+  const child = spawn(command.command, command.args, {
+    cwd: targetPath,
+    shell: false,
+    windowsHide: true
+  });
+  runningNpmCommands.set(key, child);
+  let finished = false;
+
+  child.stdout?.on("data", (chunk: Buffer) => {
+    sendNpmCommandEvent(event, { runId, repoPath: targetPath, type: "output", stream: "stdout", text: stripVTControlCharacters(chunk.toString()) });
+  });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    sendNpmCommandEvent(event, { runId, repoPath: targetPath, type: "output", stream: "stderr", text: stripVTControlCharacters(chunk.toString()) });
+  });
+  child.once("error", (error) => {
+    if (finished) return;
+    finished = true;
+    runningNpmCommands.delete(key);
+    sendNpmCommandEvent(event, { runId, repoPath: targetPath, type: "complete", command: commandName, displayCommand: command.display, exitCode: null, error: error.message });
+  });
+  child.once("close", (exitCode) => {
+    if (finished) return;
+    finished = true;
+    runningNpmCommands.delete(key);
+    sendNpmCommandEvent(event, { runId, repoPath: targetPath, type: "complete", command: commandName, displayCommand: command.display, exitCode });
+  });
+}
+
 async function scan(options: ScanOptions): Promise<RepoStatus[]> {
   const repos = await discoverRepositories(options.root, options.includeNestedRepositories);
   const statuses = await Promise.all(
@@ -250,6 +335,8 @@ function registerIpc() {
   ipcMain.handle("repo:pull", (_event, repoPath: string) => pull(repoPath, rootFolder(), getSettings()));
   ipcMain.handle("repo:push", (_event, repoPath: string) => push(repoPath, rootFolder()));
   ipcMain.handle("repo:sync", (_event, repoPath: string) => sync(repoPath, rootFolder(), getSettings()));
+  ipcMain.handle("repo:npmVerifyScript", (_event, repoPath: string) => getNpmVerifyScript(repoPath));
+  ipcMain.handle("repo:npmCommand", (event, repoPath: string, runId: string, command: "update" | NpmScriptCommand) => startNpmCommand(event, repoPath, runId, command));
   ipcMain.handle("commit:preview", async (_event, repoPath: string) => {
     const status = await getRepositoryStatus(repoPath, rootFolder(), false);
     const identityBlockers = await getGitIdentityBlockers(repoPath);

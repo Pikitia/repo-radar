@@ -16,6 +16,26 @@ export type CommitPreview = {
   packageVersion: { path: string; current: string; next: string } | null;
 };
 
+export type NpmScriptCommand = "verify" | "test";
+
+export type NpmCommandEvent =
+  | {
+      runId: string;
+      repoPath: string;
+      type: "output";
+      stream: "stdout" | "stderr";
+      text: string;
+    }
+  | {
+      runId: string;
+      repoPath: string;
+      type: "complete";
+      command: "update" | NpmScriptCommand;
+      displayCommand: string;
+      exitCode: number | null;
+      error?: string;
+    };
+
 export type RepoRadarApi = {
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
@@ -37,6 +57,9 @@ export type RepoRadarApi = {
   pull(path: string): Promise<RepoStatus>;
   push(path: string): Promise<RepoStatus>;
   sync(path: string): Promise<RepoStatus>;
+  getNpmVerifyScript(path: string): Promise<NpmScriptCommand | null>;
+  startNpmCommand(path: string, runId: string, command: "update" | NpmScriptCommand): Promise<void>;
+  onNpmCommandEvent(callback: (event: NpmCommandEvent) => void): () => void;
   openVSCode(path: string): Promise<void>;
   openExplorer(path: string): Promise<void>;
   openTerminal(path: string): Promise<void>;
