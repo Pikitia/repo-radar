@@ -91,6 +91,11 @@ describe("App UI smoke", () => {
 
     expect((await screen.findAllByText("repo-one")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Working Tree")).toBeInTheDocument();
+    const resizer = screen.getByRole("separator", { name: "Resize repository list" });
+    expect(resizer).toHaveAttribute("aria-orientation", "vertical");
+    expect(resizer).toHaveAttribute("aria-valuenow", "355");
+    fireEvent.keyDown(resizer, { key: "ArrowLeft" });
+    expect(resizer).toHaveAttribute("aria-valuenow", "335");
     expect(screen.queryByText("Staged")).not.toBeInTheDocument();
     expect(screen.getByText("Project Files")).toBeInTheDocument();
     expect(await screen.findByText("Original")).toBeInTheDocument();

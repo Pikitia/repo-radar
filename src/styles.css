@@ -7,6 +7,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 960px; overflow: hidden; }
+body.resizing-panels { cursor: col-resize; user-select: none; }
 button, input, select, textarea { font: inherit; }
 button {
   border: 1px solid #343942;
@@ -32,8 +33,30 @@ input, select, textarea {
 }
 textarea { min-height: 210px; resize: vertical; width: 100%; }
 
-.app-shell { display: grid; grid-template-columns: 355px 1fr; height: 100vh; }
-.sidebar { border-right: 1px solid #2d3239; background: #1d2025; display: flex; flex-direction: column; min-height: 0; }
+.app-shell { display: grid; grid-template-columns: var(--sidebar-width, 355px) 6px minmax(560px, 1fr); height: 100vh; }
+.sidebar { background: #1d2025; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.split-resizer {
+  width: 6px;
+  min-width: 6px;
+  height: 100vh;
+  cursor: col-resize;
+  background: #242932;
+  border-inline: 1px solid #2d3239;
+  position: relative;
+  touch-action: none;
+}
+.split-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  background: #4b5563;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.split-resizer:hover::before,
+.split-resizer:focus-visible::before {
+  opacity: 1;
+}
 .root-row { display: grid; grid-template-columns: 1fr 34px; gap: 8px; padding: 12px; border-bottom: 1px solid #2d3239; }
 .root-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .root-text strong, .repo-title, .detail-header p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

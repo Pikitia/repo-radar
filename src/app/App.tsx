@@ -1,10 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { AppSettings } from "../types/settings";
 import { defaultSettings } from "../types/settings";
 import type { RepoFilter, RepoStatus } from "../types/repo";
 import { RepoSidebar } from "../components/RepoSidebar";
 import { RepoDetail } from "../components/RepoDetail";
 import { SettingsDialog } from "../components/SettingsDialog";
+
+const sidebarDefaultWidth = 355;
+const sidebarMinWidth = 260;
+const detailMinWidth = 560;
+const splitBarWidth = 6;
+
+function clampSidebarWidth(width: number) {
+  const viewportWidth = typeof window === "undefined" ? sidebarDefaultWidth + detailMinWidth + splitBarWidth : window.innerWidth;
+  const maxWidth = Math.max(sidebarMinWidth, viewportWidth - detailMinWidth - splitBarWidth);
+  return Math.min(Math.max(width, sidebarMinWidth), maxWidth);
+}
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
@@ -14,8 +25,18 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [sidebarWidth, setSidebarWidth] = useState(() => clampSidebarWidth(sidebarDefaultWidth));
 
   const selected = useMemo(() => repos.find((repo) => repo.id === selectedId) ?? null, [repos, selectedId]);
+
+  useEffect(() => {
+    function handleResize() {
+      setSidebarWidth((current) => clampSidebarWidth(current));
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   async function refresh(fetch = true) {
     if (!settings.rootFolder) {
@@ -106,7 +127,7 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
       <RepoSidebar
         rootFolder={settings.rootFolder}
         repos={repos}
@@ -117,6 +138,50 @@ export function App() {
         onSelect={(repo) => setSelectedId(repo.id)}
         onRefresh={() => refresh(true)}
         onSettings={() => setSettingsOpen(true)}
+      />
+      <div
+        className="split-resizer"
+        role="separator"
+        aria-label="Resize repository list"
+        aria-orientation="vertical"
+        aria-valuemin={sidebarMinWidth}
+        aria-valuemax={Math.max(sidebarMinWidth, window.innerWidth - detailMinWidth - splitBarWidth)}
+        aria-valuenow={Math.round(sidebarWidth)}
+        tabIndex={0}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          document.body.classList.add("resizing-panels");
+        }}
+        onPointerMove={(event) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          setSidebarWidth(clampSidebarWidth(event.clientX));
+        }}
+        onPointerUp={(event) => {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          document.body.classList.remove("resizing-panels");
+        }}
+        onPointerCancel={(event) => {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          document.body.classList.remove("resizing-panels");
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            setSidebarWidth((current) => clampSidebarWidth(current - (event.shiftKey ? 50 : 20)));
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            setSidebarWidth((current) => clampSidebarWidth(current + (event.shiftKey ? 50 : 20)));
+          }
+          if (event.key === "Home") {
+            event.preventDefault();
+            setSidebarWidth(sidebarMinWidth);
+          }
+          if (event.key === "End") {
+            event.preventDefault();
+            setSidebarWidth(clampSidebarWidth(Number.POSITIVE_INFINITY));
+          }
+        }}
       />
       <RepoDetail repo={selected} onRepoUpdated={updateRepo} onMessage={setMessage} />
       <footer className="toast" aria-live="polite">{message}</footer>
