@@ -215,6 +215,16 @@ describe("App UI smoke", () => {
 
     await waitFor(() => expect(updateButton).not.toBeDisabled());
     expect(screen.getByText(/npm update exited with code 0\./)).toBeInTheDocument();
+    fireEvent.click(updateButton);
+    await waitFor(() => expect(api.startNpmCommand).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.startNpmCommand).mock.calls[1][1]).toBe(runId);
+    expect(screen.queryByText(/npm update exited with code 0\./)).not.toBeInTheDocument();
+    expect(screen.getAllByText("npm update...")).toHaveLength(1);
+
+    act(() => {
+      commandListener?.({ runId, repoPath: sampleRepo.absolutePath, type: "complete", command: "update", displayCommand: "npm update", exitCode: 0 });
+    });
+    await waitFor(() => expect(updateButton).not.toBeDisabled());
     fireEvent.click(screen.getAllByTitle("Close npm command output")[0]);
     expect(screen.queryByText(/npm update exited with code 0\./)).not.toBeInTheDocument();
   });

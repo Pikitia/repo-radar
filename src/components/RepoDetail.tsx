@@ -155,7 +155,8 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
 
     const displayCommand = command === "update" ? "npm update" : `npm run ${command}`;
     const label = command === "update" ? "npm update" : `npm run ${command}`;
-    const runId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const reusableTab = repoNpmCommandTabs.find((item) => !item.running);
+    const runId = reusableTab?.id ?? globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const nextTab: NpmCommandTab = {
       id: runId,
       repoId: repo.id,
@@ -167,7 +168,11 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
       running: true,
       exitCode: null
     };
-    setNpmCommandTabs((current) => [...current, nextTab]);
+    setNpmCommandTabs((current) => (
+      reusableTab
+        ? current.map((item) => (item.id === reusableTab.id ? nextTab : item))
+        : [...current, nextTab]
+    ));
     setTab(npmCommandTabId(runId));
 
     try {
