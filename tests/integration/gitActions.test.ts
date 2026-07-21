@@ -39,6 +39,18 @@ describe("Git integration", () => {
     await expect(discoverRepositories(root, false)).resolves.toEqual([repo]);
   });
 
+  it("discovers immediate child repositories when the configured root is also a repository", async () => {
+    const rootRepo = await initRepo(".");
+    const childRepo = await initRepo("child");
+    const nestedRepo = await initRepo(path.join("child", "nested"));
+    const repoBelowNonRepoChild = await initRepo(path.join("container", "nested"));
+
+    await expect(discoverRepositories(root, false)).resolves.toEqual([childRepo, rootRepo].sort((a, b) => a.localeCompare(b)));
+    await expect(discoverRepositories(root, true)).resolves.toEqual(
+      [childRepo, nestedRepo, repoBelowNonRepoChild, rootRepo].sort((a, b) => a.localeCompare(b))
+    );
+  });
+
   it("detects clean, unstaged, staged, and untracked changes", async () => {
     const repo = await initRepo("states");
     expect((await getRepositoryStatus(repo, root, false)).files).toHaveLength(0);

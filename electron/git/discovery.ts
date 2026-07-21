@@ -7,7 +7,9 @@ export async function discoverRepositories(root: string, includeNestedRepositori
   const repos: string[] = [];
   const normalizedRoot = path.resolve(root);
 
-  async function walk(dir: string): Promise<void> {
+  let rootIsRepository = false;
+
+  async function walk(dir: string, depth = 0): Promise<void> {
     let entries;
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
@@ -16,11 +18,23 @@ export async function discoverRepositories(root: string, includeNestedRepositori
     }
 
     const hasGit = entries.some((entry) => entry.name === ".git");
+    if (depth === 0) {
+      rootIsRepository = hasGit;
+    }
+
     if (hasGit) {
       repos.push(dir);
-      if (!includeNestedRepositories) {
+      // The configured root can be a repository used for shared agent metadata
+      // while its immediate subfolders are the repositories the user works in.
+      // Inspect those immediate children before applying the normal nested-repo
+      // boundary.
+      if (!includeNestedRepositories && depth > 0) {
         return;
       }
+    }
+
+    if (!includeNestedRepositories && rootIsRepository && depth >= 1) {
+      return;
     }
 
     await Promise.all(
@@ -28,7 +42,7 @@ export async function discoverRepositories(root: string, includeNestedRepositori
         .filter((entry) => entry.isDirectory())
         .filter((entry) => !IGNORED_DIRS.has(entry.name))
         .filter((entry) => !entry.name.startsWith("."))
-        .map((entry) => walk(path.join(dir, entry.name)))
+        .map((entry) => walk(path.join(dir, entry.name), depth + 1))
     );
   }
 
