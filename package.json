@@ -1,6 +1,6 @@
 {
   "name": "repo-radar",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Windows desktop GUI for monitoring Git status across local repositories.",
   "main": "dist-electron/electron/main.js",
   "type": "module",

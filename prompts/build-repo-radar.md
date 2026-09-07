@@ -4,7 +4,7 @@ You are an AI coding agent building Repo Radar in this repository.
 
 Repo Radar is a Windows desktop GUI app for monitoring and managing Git status across multiple local repositories. Build it with Electron + React + TypeScript.
 
-Read these files first:
+Read `AGENTS.md` first and inspect the existing implementation and Git status. This is a full-v1 build prompt only when explicitly invoked for that scope; a targeted follow-up should implement and verify only the requested change. Read the relevant sections of these references, using the full set for the original full-v1 assignment:
 
 - `docs/requirements.md`
 - `docs/product-spec.md`
@@ -79,23 +79,23 @@ Be careful with large diffs:
 
 ## Verification Requirements
 
-Before finishing, perform the verification described in `docs/verification-plan.md`.
+For the full-v1 assignment, perform the verification described in `docs/verification-plan.md`. For a scoped follow-up, use the affected checks required by `AGENTS.md`; packaging remains subject to its explicit-request control.
 
-At minimum, run:
+For the full-v1 assignment, the minimum checks are:
 
 - Type checking.
 - Unit tests.
 - Integration tests with temporary Git repositories.
 - UI smoke tests if feasible.
-- Production package/build command.
+- Production build; run the packaging command when the assignment explicitly requests an executable.
 
 Create temporary test repositories for integration tests. Do not use real user repositories as test fixtures.
 
-The final answer must include:
+For a scoped follow-up, report the change and its actual verification. For the full-v1 assignment, the final answer must include:
 
 - Summary of what was built.
 - Verification commands run and whether they passed.
-- Path to the produced executable.
+- Path to the produced executable when packaging was requested and completed; otherwise state why that deliverable remains unavailable.
 - Any limitations, skipped checks, or follow-up work.
 
 Do not claim verification succeeded unless you actually ran it.
