@@ -1,7 +1,8 @@
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/app/App";
+import { DiffViewer } from "../../src/components/DiffViewer.js";
 import type { NpmCommandEvent, RepoRadarApi } from "../../src/types/api";
 import type { RepoStatus } from "../../src/types/repo";
 import type { AppSettings } from "../../src/types/settings";
@@ -81,8 +82,89 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
 }
 
 describe("App UI smoke", () => {
+  let reportLayoutWidth: (width: number) => void;
+
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe() {
+        reportLayoutWidth = (width) => this.callback([
+          { contentRect: { width } } as ResizeObserverEntry
+        ], this as unknown as ResizeObserver);
+        reportLayoutWidth(900);
+      }
+      disconnect() {}
+    });
+  });
+
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["working", "untracked", "staged"] as const)("resizes the %s file list and displays full relative paths", async (mode) => {
+    const api = installApi();
+    const file = "new folder/nested/a-long-filename.txt";
+    const repo = {
+      ...sampleRepo,
+      files: [{ ...sampleRepo.files[0], path: file, staged: mode === "staged", unstaged: mode === "working", untracked: mode === "untracked" }]
+    };
+    render(<DiffViewer repo={repo} mode={mode} />);
+    await waitFor(() => expect(api.getDiff).toHaveBeenCalledWith(repo.absolutePath, file, mode));
+    expect(screen.getByRole("button", { name: /new folder\/nested\/a-long-filename.txt/ })).toBeInTheDocument();
+    const resizer = screen.getByRole("separator", { name: "Resize file list" });
+    expect(resizer).toHaveAttribute("aria-valuenow", "220");
+    fireEvent.keyDown(resizer, { key: "ArrowRight", shiftKey: true });
+    expect(resizer).toHaveAttribute("aria-valuenow", "270");
+    expect(resizer.parentElement).toHaveStyle({ "--file-list-width": "270px" });
+    fireEvent.keyDown(resizer, { key: "Home" });
+    fireEvent.keyDown(resizer, { key: "ArrowLeft" });
+    expect(resizer).toHaveAttribute("aria-valuenow", "160");
+    fireEvent.keyDown(resizer, { key: "End" });
+    fireEvent.keyDown(resizer, { key: "ArrowRight" });
+    expect(resizer).toHaveAttribute("aria-valuenow", "646");
+    act(() => reportLayoutWidth(600));
+    expect(resizer).toHaveAttribute("aria-valuenow", "346");
+    expect(resizer.parentElement).toHaveStyle({ "--file-list-width": "346px" });
+  });
+
+  it("drags the file divider without jumping and cleans up on capture loss and unmount", async () => {
+    installApi();
+    vi.stubGlobal("PointerEvent", class extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, init: PointerEventInit) {
+        super(type, init);
+        this.pointerId = init.pointerId ?? 0;
+      }
+    });
+    const view = render(<DiffViewer repo={sampleRepo} mode="working" />);
+    await screen.findByText("new line");
+    const resizer = screen.getByRole("separator", { name: "Resize file list" });
+    resizer.setPointerCapture = vi.fn();
+    resizer.hasPointerCapture = vi.fn().mockReturnValue(true);
+    resizer.releasePointerCapture = vi.fn();
+
+    fireEvent.pointerDown(resizer, { button: 0, pointerId: 1, clientX: 700 });
+    fireEvent.pointerMove(resizer, { pointerId: 2, clientX: 900 });
+    expect(resizer).toHaveAttribute("aria-valuenow", "220");
+    fireEvent.pointerMove(resizer, { pointerId: 1, clientX: 780 });
+    expect(resizer).toHaveAttribute("aria-valuenow", "300");
+    expect(document.body).toHaveClass("resizing-panels");
+    fireEvent.pointerUp(resizer, { pointerId: 1 });
+    expect(resizer.releasePointerCapture).toHaveBeenCalledWith(1);
+    expect(document.body).not.toHaveClass("resizing-panels");
+
+    fireEvent.pointerDown(resizer, { button: 0, pointerId: 1, clientX: 780 });
+    fireEvent.lostPointerCapture(resizer, { pointerId: 1 });
+    fireEvent.pointerMove(resizer, { pointerId: 1, clientX: 800 });
+    expect(resizer).toHaveAttribute("aria-valuenow", "300");
+    expect(document.body).not.toHaveClass("resizing-panels");
+    fireEvent.pointerDown(resizer, { button: 0, pointerId: 1, clientX: 780 });
+    fireEvent.pointerCancel(resizer, { pointerId: 1 });
+    expect(document.body).not.toHaveClass("resizing-panels");
+    fireEvent.pointerDown(resizer, { button: 0, pointerId: 1, clientX: 780 });
+    view.unmount();
+    expect(document.body).not.toHaveClass("resizing-panels");
   });
 
   it("renders discovered repos, detail tabs, diffs, project files, and commit dialog state", async () => {

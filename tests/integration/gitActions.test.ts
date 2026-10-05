@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { discoverRepositories } from "../../electron/git/discovery";
 import { runGit } from "../../electron/git/exec";
 import { getRepositoryStatus } from "../../electron/git/status";
-import { getCommitDiff } from "../../electron/git/diff";
+import { getCommitDiff, getDiff } from "../../electron/git/diff.js";
 import { bumpPackageVersion, commit, pull, push, stageFiles, sync } from "../../electron/git/actions";
 import { getBranchComparison } from "../../electron/git/branchComparison";
 import { defaultSettings } from "../../src/types/settings";
@@ -66,6 +66,38 @@ describe("Git integration", () => {
     await writeFile(path.join(repo, "new.txt"), "new");
     status = await getRepositoryStatus(repo, root, false);
     expect(status.hasUntrackedFiles).toBe(true);
+  });
+
+  it("lists and previews each untracked file in new folders while respecting ignores", async () => {
+    const repo = await initRepo("untracked-folders");
+    await writeFile(path.join(repo, ".gitignore"), "*.ignored\n");
+    await runGit(repo, ["add", ".gitignore"]);
+    await runGit(repo, ["commit", "-m", "Ignore generated files"]);
+    await mkdir(path.join(repo, "new folder", "nested"), { recursive: true });
+    const contents = {
+      "new folder/first.txt": "First file\nsecond line\n",
+      "new folder/nested/second.txt": "Nested file\n"
+    };
+    for (const [file, content] of Object.entries(contents)) {
+      await writeFile(path.join(repo, file), content);
+    }
+    await writeFile(path.join(repo, "new folder", "skip.ignored"), "Ignored content");
+    await writeFile(path.join(repo, "new folder", "image.bin"), Buffer.from([0, 1, 2]));
+
+    const status = await getRepositoryStatus(repo, root, false);
+    expect(status.files.filter((file) => file.untracked).map((file) => file.path).sort()).toEqual([
+      "new folder/first.txt", "new folder/image.bin", "new folder/nested/second.txt"
+    ]);
+    for (const [file, content] of Object.entries(contents)) {
+      await expect(getDiff(repo, file, "untracked")).resolves.toMatchObject({ text: content, isBinary: false });
+    }
+    await expect(getDiff(repo, "new folder/image.bin", "untracked")).resolves.toMatchObject({ isBinary: true });
+
+    const staged = await stageFiles(repo, root, ["new folder/first.txt"]);
+    expect(staged.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "new folder/first.txt", staged: true, untracked: false }),
+      expect.objectContaining({ path: "new folder/nested/second.txt", staged: false, untracked: true })
+    ]));
   });
 
   it("detects ahead, behind, diverged and supports pull, push, sync", async () => {

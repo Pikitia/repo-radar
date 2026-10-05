@@ -144,7 +144,7 @@ export async function getRepositoryStatus(repoPath: string, rootPath: string, fe
     }
   }
 
-  const status = await runGit(repoPath, ["status", "--porcelain=v2", "--branch"]);
+  const status = await runGit(repoPath, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]);
   const parsed = parsePorcelainV2(status.stdout);
   const issues = await detectWarnings(repoPath, parsed, fetchWarning);
   const relativePath = path.relative(rootPath, repoPath) || path.basename(repoPath);
