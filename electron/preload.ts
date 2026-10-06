@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 import type { AppSettings } from "../src/types/settings.js";
+import type { CiWatchInput } from "../src/types/ci.js";
 import type { DiffMode } from "../src/types/repo.js";
 import type { NpmCommandEvent, NpmScriptCommand, ScanOptions, RepoRadarApi } from "../src/types/api.js";
 
@@ -14,6 +15,11 @@ const api: RepoRadarApi = {
   scanRepositories: (options: ScanOptions) => invoke("repo:scan", options),
   refreshRepository: (path: string, fetch?: boolean) => invoke("repo:refresh", path, fetch),
   getBranchComparison: (path: string) => invoke("repo:branchComparison", path),
+  addCiWatch: (watch: CiWatchInput) => invoke("ci:addWatch", watch),
+  removeCiWatch: (id: string) => invoke("ci:removeWatch", id),
+  getCiWorkflows: (path: string) => invoke("ci:workflows", path),
+  getCiRun: (path: string, branch: string, workflowId?: number) => invoke("ci:run", path, branch, workflowId),
+  getCiJobs: (path: string, runId: number, attempt: number) => invoke("ci:jobs", path, runId, attempt),
   getDiff: (path: string, file: string, mode: DiffMode) => invoke("repo:diff", path, file, mode),
   getCommitDiff: (path: string, hash: string) => invoke("repo:commitDiff", path, hash),
   getProjectFiles: (path: string) => invoke("repo:projectFiles", path),

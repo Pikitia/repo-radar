@@ -17,6 +17,8 @@ import { createCommitProvider } from "./aiCommit.js";
 import { tryGit } from "./git/exec.js";
 import { getPackageVersionInfo } from "./git/versionBump.js";
 import { getBranchComparison } from "./git/branchComparison.js";
+import { addCiWatch, removeCiWatch, getCiWorkflows, getCiRun, getCiJobs } from "./git/ciWatch.js";
+import type { CiWatchInput } from "../src/types/ci.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
@@ -51,6 +53,12 @@ function createWindow() {
 function rootFolder(): string {
   const settings = getSettings();
   return settings.rootFolder || process.cwd();
+}
+
+function ciRootFolder(): string {
+  const root = getSettings().rootFolder;
+  if (!root) throw new Error("Choose a root folder before using CI Watch.");
+  return root;
 }
 
 function launchDetached(command: string, args: string[], options: { cwd?: string; windowsHide?: boolean } = {}): Promise<void> {
@@ -315,7 +323,7 @@ async function discoverRepoShells(root: string, includeNestedRepositories: boole
 
 function registerIpc() {
   ipcMain.handle("settings:get", () => getSettings());
-  ipcMain.handle("settings:update", (_event, settings) => updateSettings(settings));
+  ipcMain.handle("settings:update", (_event, settings) => updateSettings({ ...settings, ciWatches: getSettings().ciWatches }));
   ipcMain.handle("dialog:chooseRootFolder", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     return result.canceled ? null : result.filePaths[0];
@@ -324,6 +332,11 @@ function registerIpc() {
   ipcMain.handle("repo:discover", (_event, options: Omit<ScanOptions, "fetch">) => discoverRepoShells(options.root, options.includeNestedRepositories));
   ipcMain.handle("repo:refresh", (_event, repoPath: string, fetch = true) => getRepositoryStatus(repoPath, rootFolder(), fetch));
   ipcMain.handle("repo:branchComparison", (_event, repoPath: string) => getBranchComparison(repoPath));
+  ipcMain.handle("ci:addWatch", (_event, watch: CiWatchInput) => addCiWatch(watch, ciRootFolder()));
+  ipcMain.handle("ci:removeWatch", (_event, id: string) => removeCiWatch(id));
+  ipcMain.handle("ci:workflows", (_event, repoPath: string) => getCiWorkflows(repoPath, ciRootFolder()));
+  ipcMain.handle("ci:run", (_event, repoPath: string, branch: string, workflowId?: number) => getCiRun(repoPath, ciRootFolder(), branch, workflowId));
+  ipcMain.handle("ci:jobs", (_event, repoPath: string, runId: number, attempt: number) => getCiJobs(repoPath, ciRootFolder(), runId, attempt));
   ipcMain.handle("repo:diff", (_event, repoPath: string, file: string, mode: DiffMode) => getDiff(repoPath, file, mode));
   ipcMain.handle("repo:commitDiff", (_event, repoPath: string, hash: string) => getCommitDiff(repoPath, hash));
   ipcMain.handle("repo:projectFiles", (_event, repoPath: string) => getProjectFiles(repoPath));

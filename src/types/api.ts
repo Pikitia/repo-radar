@@ -1,4 +1,5 @@
 import type { AppSettings } from "./settings.js";
+import type { CiWatch, CiWatchInput, CiWorkflow, CiRun, CiJob } from "./ci.js";
 import type { BranchComparison, DiffMode, DiffResult, RepoStatus, ProjectFile } from "./repo.js";
 
 export type ScanOptions = {
@@ -44,6 +45,11 @@ export type RepoRadarApi = {
   scanRepositories(options: ScanOptions): Promise<RepoStatus[]>;
   refreshRepository(path: string, fetch?: boolean): Promise<RepoStatus>;
   getBranchComparison(path: string): Promise<BranchComparison | null>;
+  addCiWatch(watch: CiWatchInput): Promise<CiWatch[]>;
+  removeCiWatch(id: string): Promise<CiWatch[]>;
+  getCiWorkflows(path: string): Promise<CiWorkflow[]>;
+  getCiRun(path: string, branch: string, workflowId?: number): Promise<CiRun | null>;
+  getCiJobs(path: string, runId: number, attempt: number): Promise<CiJob[]>;
   getDiff(path: string, file: string, mode: DiffMode): Promise<DiffResult>;
   getCommitDiff(path: string, hash: string): Promise<DiffResult>;
   getProjectFiles(path: string): Promise<ProjectFile[]>;

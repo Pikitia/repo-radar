@@ -1,5 +1,5 @@
 import React from "react";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/app/App";
 import { DiffViewer } from "../../src/components/DiffViewer.js";
@@ -7,6 +7,7 @@ import type { NpmCommandEvent, RepoRadarApi } from "../../src/types/api";
 import type { RepoStatus } from "../../src/types/repo";
 import type { AppSettings } from "../../src/types/settings";
 import { defaultSettings } from "../../src/types/settings";
+import type { CiRun } from "../../src/types/ci.js";
 
 const sampleRepo: RepoStatus = {
   id: "c:/root/repo-one",
@@ -40,6 +41,11 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     scanRepositories: vi.fn().mockResolvedValue([sampleRepo]),
     refreshRepository: vi.fn().mockResolvedValue(sampleRepo),
     getBranchComparison: vi.fn().mockResolvedValue(null),
+    addCiWatch: vi.fn().mockResolvedValue([]),
+    removeCiWatch: vi.fn().mockResolvedValue([]),
+    getCiWorkflows: vi.fn().mockResolvedValue([]),
+    getCiRun: vi.fn().mockResolvedValue(null),
+    getCiJobs: vi.fn().mockResolvedValue([]),
     getDiff: vi.fn().mockResolvedValue({
       file: "src/app.ts",
       mode: "working",
@@ -100,6 +106,158 @@ describe("App UI smoke", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  const productionRun: CiRun = {
+    id: 41, attempt: 2, workflowName: "Deploy production", title: "Release search", number: 18,
+    branch: "production", commit: "abcdef1234567890", status: "in_progress", conclusion: null,
+    createdAt: "2026-10-05T10:00:00Z", startedAt: "2026-10-05T10:01:00Z", updatedAt: "2026-10-05T10:02:00Z",
+    htmlUrl: "https://github.com/example/repo-one/actions/runs/41"
+  };
+
+  it("quickly watches main without switching views or duplicating an existing watch", async () => {
+    const api = installApi();
+    const watch = { id: "main", repoPath: sampleRepo.absolutePath, branch: "main" };
+    vi.mocked(api.addCiWatch).mockResolvedValue([watch]);
+    render(<App />);
+    await screen.findByText("Working Tree");
+    fireEvent.click(screen.getByRole("button", { name: "Watch main" }));
+    await waitFor(() => expect(api.addCiWatch).toHaveBeenCalledWith({ repoPath: sampleRepo.absolutePath, branch: "main" }));
+    expect(await screen.findByRole("button", { name: "Watching main" })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: "Repositories" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Watching main" }));
+    expect(api.addCiWatch).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("tab", { name: "CI Watch" }));
+    expect(await within(screen.getByRole("tabpanel", { name: "CI Watch" })).findByText("No runs")).toBeVisible();
+    expect(api.getCiRun).toHaveBeenCalledWith(sampleRepo.absolutePath, "main", undefined);
+  });
+
+  it("recognizes existing main workflow watches and reports quick-add failures", async () => {
+    installApi({ ...defaultSettings, rootFolder: "C:/root", ciWatches: [{ id: "main-deploy", repoPath: sampleRepo.absolutePath, branch: "main", workflowId: 8 }] });
+    render(<App />);
+    expect(await screen.findByRole("button", { name: "Watching main" })).toBeDisabled();
+    cleanup();
+    const api = installApi();
+    vi.mocked(api.addCiWatch).mockRejectedValue(new Error("CI Watch requires a github.com origin remote."));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Watch main" }));
+    expect(await screen.findByText("Could not watch main: CI Watch requires a github.com origin remote.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Watch main" })).not.toBeDisabled();
+  });
+
+  it("splits timing from run date and sorts every column while preserving expanded rows", async () => {
+    const repoTwo = { ...sampleRepo, id: "c:/root/repo-two", name: "repo-two", absolutePath: "C:/root/repo-two", relativePath: "repo-two" };
+    const watches = [{ id: "one", repoPath: sampleRepo.absolutePath, branch: "production" }, { id: "two", repoPath: repoTwo.absolutePath, branch: "main" }];
+    const api = installApi({ ...defaultSettings, rootFolder: "C:/root", ciWatches: watches });
+    vi.mocked(api.discoverRepositories).mockResolvedValue([repoTwo, sampleRepo]);
+    vi.mocked(api.refreshRepository).mockImplementation(async (path) => path === repoTwo.absolutePath ? repoTwo : sampleRepo);
+    vi.mocked(api.getCiRun).mockImplementation(async (path) => path === repoTwo.absolutePath ? { ...productionRun, id: 52, branch: "main", createdAt: "2026-10-05T11:00:00Z" } : productionRun);
+    render(<App />);
+    await screen.findByText("Working Tree");
+    fireEvent.click(screen.getByRole("tab", { name: "CI Watch" }));
+    const overview = screen.getByRole("tabpanel", { name: "CI Watch" });
+    await waitFor(() => expect(within(overview).getAllByText("Running")).toHaveLength(2));
+    function summaryNames() { return [...overview.querySelectorAll(".ci-summary-row")].map((row) => within(row as HTMLElement).getByRole("button", { name: /^repo-/ }).textContent); }
+    expect(summaryNames()).toEqual(["repo-two", "repo-one"]);
+    expect(within(overview).queryByText(/^Checked /)).not.toBeInTheDocument();
+    const summary = overview.querySelector(".ci-summary-row")!;
+    expect(summary.querySelectorAll("td")).toHaveLength(9);
+    expect(summary.querySelectorAll("td")[6].textContent).toMatch(/\d+[hms]/);
+    expect(summary.querySelectorAll("td")[7]).toHaveAttribute("title", new Date("2026-10-05T11:00:00Z").toLocaleString());
+    fireEvent.click(within(overview).getByRole("button", { name: "Expand repo-one production latest run" }));
+    await within(overview).findByText(/^Status last refreshed/);
+    for (const label of ["Repository", "Branch", "Workflow", "Status", "Commit", "Timing", "When run"]) {
+      const button = within(overview).getByRole("button", { name: `Sort by ${label}` });
+      fireEvent.click(button);
+      expect(button.closest("th")).toHaveAttribute("aria-sort", "ascending");
+      if (label === "Repository") expect(summaryNames()).toEqual(["repo-one", "repo-two"]);
+      fireEvent.click(button);
+      expect(button.closest("th")).toHaveAttribute("aria-sort", "descending");
+      if (label === "Repository") expect(summaryNames()).toEqual(["repo-two", "repo-one"]);
+    }
+    expect(within(overview).getByRole("button", { name: "Collapse repo-one production latest run" })).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "CI Watch" })); });
+    expect(within(overview).getByRole("button", { name: "Sort by When run" }).closest("th")).toHaveAttribute("aria-sort", "descending");
+    expect(within(overview).getByRole("button", { name: "Collapse repo-one production latest run" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("shows watches across repositories, expands jobs inline, and preserves both views' selections", async () => {
+    const repoTwo = { ...sampleRepo, id: "c:/root/repo-two", name: "repo-two", absolutePath: "C:/root/repo-two", relativePath: "repo-two", hasUnstagedChanges: false, files: [] };
+    const watches = [
+      { id: "one", repoPath: sampleRepo.absolutePath, branch: "production", workflowId: 8, workflowName: "Deploy production" },
+      { id: "two", repoPath: repoTwo.absolutePath, branch: "main", workflowId: 9, workflowName: "Build" }
+    ];
+    const api = installApi({ ...defaultSettings, rootFolder: "C:/root", ciWatches: watches });
+    vi.mocked(api.discoverRepositories).mockResolvedValue([sampleRepo, repoTwo]);
+    vi.mocked(api.refreshRepository).mockImplementation(async (repoPath) => repoPath === sampleRepo.absolutePath ? sampleRepo : repoTwo);
+    vi.mocked(api.getCiRun).mockImplementation(async (repoPath) => repoPath === sampleRepo.absolutePath ? productionRun : { ...productionRun, id: 52, workflowName: "Build", branch: "main", status: "completed", conclusion: "success" });
+    vi.mocked(api.getCiJobs).mockResolvedValue([{ id: 101, name: "Deploy", status: "in_progress", conclusion: null, startedAt: productionRun.startedAt, completedAt: null, htmlUrl: productionRun.htmlUrl, steps: [{ number: 1, name: "Upload release", status: "in_progress", conclusion: null }] }]);
+    render(<App />);
+    fireEvent.click(await screen.findByText("Project Files"));
+    await screen.findByText("Repo One");
+    fireEvent.click(screen.getByRole("tab", { name: "CI Watch" }));
+    const overview = screen.getByRole("tabpanel", { name: "CI Watch" });
+    await within(overview).findByText("Succeeded");
+    expect(within(overview).getByRole("button", { name: "repo-one" })).toBeInTheDocument();
+    expect(within(overview).getByRole("button", { name: "repo-two" })).toBeInTheDocument();
+    expect(api.getCiRun).toHaveBeenCalledWith(sampleRepo.absolutePath, "production", 8);
+    expect(api.getCiRun).toHaveBeenCalledWith(repoTwo.absolutePath, "main", 9);
+    fireEvent.click(screen.getByRole("button", { name: "clean" }));
+    expect(within(overview).getByRole("button", { name: "repo-one" })).toBeInTheDocument();
+    fireEvent.click(within(overview).getByRole("button", { name: "Expand repo-one production Deploy production" }));
+    expect(await within(overview).findByText("1. Upload release")).toBeInTheDocument();
+    expect(api.getCiJobs).toHaveBeenCalledWith(sampleRepo.absolutePath, 41, 2);
+    expect(within(overview).getByRole("button", { name: "repo-two" })).toBeInTheDocument();
+    fireEvent.click(within(overview).getByRole("button", { name: "repo-one" }));
+    expect(screen.getByRole("tab", { name: "Repositories" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Repo One")).toBeVisible();
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "CI Watch" })); });
+    expect(within(overview).getByRole("button", { name: "Collapse repo-one production Deploy production" })).toHaveAttribute("aria-expanded", "true");
+    expect(api.pull).not.toHaveBeenCalled();
+    expect(api.push).not.toHaveBeenCalled();
+  });
+
+  it("adds a persistent branch/workflow watch and removes it", async () => {
+    const watch = { id: "production", repoPath: sampleRepo.absolutePath, branch: "production", workflowId: 8, workflowName: "Deploy production" };
+    const api = installApi();
+    vi.mocked(api.addCiWatch).mockResolvedValue([watch]);
+    vi.mocked(api.getCiRun).mockResolvedValue(productionRun);
+    vi.mocked(api.getCiWorkflows).mockResolvedValue([{ id: 8, name: "Deploy production", path: ".github/workflows/deploy.yml", state: "active" }]);
+    render(<App />);
+    await screen.findByText("Working Tree");
+    fireEvent.click(screen.getByRole("tab", { name: "CI Watch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Watch branch" }));
+    await screen.findByRole("option", { name: /Deploy production/ });
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "production" } });
+    fireEvent.change(screen.getByLabelText("Workflow"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add watch" }));
+    await waitFor(() => expect(api.addCiWatch).toHaveBeenCalledWith({ repoPath: sampleRepo.absolutePath, branch: "production", workflowId: 8, workflowName: "Deploy production" }));
+    expect(await screen.findByText("Running")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Remove watch for repo-one production Deploy production" }));
+    await waitFor(() => expect(api.removeCiWatch).toHaveBeenCalledWith("production"));
+    expect(await screen.findByText("No watched branches yet")).toBeVisible();
+  });
+
+  it("keeps old run data clearly unavailable after a failed refresh, then recovers", async () => {
+    const api = installApi({ ...defaultSettings, rootFolder: "C:/root", ciWatches: [{ id: "one", repoPath: sampleRepo.absolutePath, branch: "production" }] });
+    vi.mocked(api.getCiRun).mockResolvedValue(productionRun);
+    render(<App />);
+    await screen.findByText("Working Tree");
+    fireEvent.click(screen.getByRole("tab", { name: "CI Watch" }));
+    const overview = screen.getByRole("tabpanel", { name: "CI Watch" });
+    await within(overview).findByText("Running");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh CI" })).not.toBeDisabled());
+    vi.mocked(api.getCiRun).mockRejectedValue(new Error("Network offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh CI" }));
+    expect(await within(overview).findByText("Unavailable")).toBeVisible();
+    expect(within(overview).getByText("Previous run retained. Network offline")).toBeVisible();
+    expect(within(overview).getByText("abcdef1")).toBeVisible();
+    expect(within(overview).queryByText("Running")).not.toBeInTheDocument();
+    vi.mocked(api.getCiRun).mockResolvedValue({ ...productionRun, status: "completed", conclusion: "success" });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh CI" }));
+    expect(await within(overview).findByText("Succeeded")).toBeVisible();
+    expect(within(overview).queryByText("Unavailable")).not.toBeInTheDocument();
   });
 
   it.each(["working", "untracked", "staged"] as const)("resizes the %s file list and displays full relative paths", async (mode) => {

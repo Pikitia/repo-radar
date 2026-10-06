@@ -1,3 +1,5 @@
+import type { CiWatch } from "./ci.js";
+
 export type PullStrategy = "git-config" | "merge" | "rebase";
 export type AiProviderType = "none" | "openai-compatible";
 export type AiKeySource = "environment" | "settings";
@@ -8,6 +10,7 @@ export type AppSettings = {
   includeNestedRepositories: boolean;
   pullStrategy: PullStrategy;
   refreshIntervalMinutes: number;
+  ciWatches: CiWatch[];
   github: {
     tokenSource: GitHubTokenSource;
     token?: string;
@@ -26,6 +29,7 @@ export const defaultSettings: AppSettings = {
   includeNestedRepositories: false,
   pullStrategy: "git-config",
   refreshIntervalMinutes: 5,
+  ciWatches: [],
   github: {
     tokenSource: "environment"
   },

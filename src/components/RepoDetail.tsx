@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import { X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import type { NpmScriptCommand } from "../types/api";
 import type { RepoStatus } from "../types/repo";
 import { visibleTabs } from "../state/repoLogic";
@@ -13,6 +13,9 @@ type Props = {
   repo: RepoStatus | null;
   onRepoUpdated(repo: RepoStatus): void;
   onMessage(message: string): void;
+  onWatchMain(): void;
+  mainWatched: boolean;
+  watchMainBusy: boolean;
 };
 
 type StaticTab = "working" | "staged" | "untracked" | "ahead" | "branches" | "actions" | "project";
@@ -41,7 +44,7 @@ const tabLabels: Record<StaticTab, string> = {
   project: "Project Files"
 };
 
-export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
+export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWatched, watchMainBusy }: Props) {
   const [tab, setTab] = useState<Tab | null>(null);
   const [busy, setBusy] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
@@ -193,11 +196,14 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage }: Props) {
 
   return (
     <main className="detail">
-      <header className="detail-header">
+      <header className="detail-header repo-detail-header">
         <div>
           <h1>{repo.name}</h1>
           <p title={repo.absolutePath}>{repo.absolutePath}</p>
         </div>
+        <button onClick={onWatchMain} disabled={mainWatched || watchMainBusy || repo.statusLoading} title={mainWatched ? "The main branch is already in CI Watch." : "Add main to CI Watch using the latest run on that branch."}>
+          {mainWatched ? <Check size={14} /> : <Plus size={14} />}{mainWatched ? "Watching main" : watchMainBusy ? "Adding watch…" : "Watch main"}
+        </button>
       </header>
       <Toolbar
         repo={repo}

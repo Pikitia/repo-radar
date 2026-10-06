@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AppSettings } from "../types/settings";
 import { defaultSettings } from "../types/settings";
 import type { RepoFilter, RepoStatus } from "../types/repo";
 import { RepoSidebar } from "../components/RepoSidebar";
 import { RepoDetail } from "../components/RepoDetail";
 import { SettingsDialog } from "../components/SettingsDialog";
+import { CiWatch } from "../components/CiWatch.js";
+import { ciPathKey } from "../state/ciLogic.js";
 
 const sidebarDefaultWidth = 355;
 const sidebarMinWidth = 260;
@@ -21,10 +23,15 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [repos, setRepos] = useState<RepoStatus[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<"repositories" | "ci">("repositories");
+  const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [filter, setFilter] = useState<RepoFilter>("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [watchMainBusy, setWatchMainBusy] = useState(false);
+  const watchRoot = useRef(settings.rootFolder);
+  watchRoot.current = settings.rootFolder;
   const [sidebarWidth, setSidebarWidth] = useState(() => clampSidebarWidth(sidebarDefaultWidth));
 
   const selected = useMemo(() => repos.find((repo) => repo.id === selectedId) ?? null, [repos, selectedId]);
@@ -51,6 +58,7 @@ export function App() {
         includeNestedRepositories: settings.includeNestedRepositories
       });
       setRepos(shells);
+      setRepoRoot(settings.rootFolder);
       setSelectedId((current) => current && shells.some((repo) => repo.id === current) ? current : shells[0]?.id ?? null);
       setMessage(`${shells.length} repositories found. Loading status...`);
 
@@ -126,6 +134,19 @@ export function App() {
     }));
   }
 
+  async function watchMain(repo: RepoStatus) {
+    if (watchMainBusy) return;
+    const startingRoot = settings.rootFolder;
+    setWatchMainBusy(true);
+    try {
+      const ciWatches = await window.repoRadar.addCiWatch({ repoPath: repo.absolutePath, branch: "main" });
+      setSettings((current) => current.rootFolder === startingRoot ? { ...current, ciWatches } : current);
+      if (watchRoot.current === startingRoot) setMessage(`Watching main for ${repo.name} in CI Watch.`);
+    } catch (error) {
+      if (watchRoot.current === startingRoot) setMessage(`Could not watch main: ${error instanceof Error ? error.message : String(error)}`);
+    } finally { setWatchMainBusy(false); }
+  }
+
   return (
     <div className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
       <RepoSidebar
@@ -135,7 +156,7 @@ export function App() {
         filter={filter}
         loading={loading}
         onFilterChange={setFilter}
-        onSelect={(repo) => setSelectedId(repo.id)}
+        onSelect={(repo) => { setSelectedId(repo.id); setView("repositories"); }}
         onRefresh={() => refresh(true)}
         onSettings={() => setSettingsOpen(true)}
       />
@@ -183,7 +204,33 @@ export function App() {
           }
         }}
       />
-      <RepoDetail repo={selected} onRepoUpdated={updateRepo} onMessage={setMessage} />
+      <div className="workspace">
+        <nav className="workspace-nav" role="tablist" aria-label="Main views">
+          <button id="repositories-tab" role="tab" aria-controls="repositories-view" aria-selected={view === "repositories"} className={view === "repositories" ? "active" : ""} onClick={() => setView("repositories")}>Repositories</button>
+          <button id="ci-watch-tab" role="tab" aria-controls="ci-watch-view" aria-selected={view === "ci"} className={view === "ci" ? "active" : ""} onClick={() => setView("ci")}>CI Watch</button>
+        </nav>
+        <div id="repositories-view" className="workspace-pane" role="tabpanel" aria-labelledby="repositories-tab" hidden={view !== "repositories"}>
+          <RepoDetail
+            repo={selected}
+            onRepoUpdated={updateRepo}
+            onMessage={setMessage}
+            onWatchMain={() => { if (selected) void watchMain(selected); }}
+            mainWatched={Boolean(selected && settings.ciWatches?.some((watch) => ciPathKey(watch.repoPath) === ciPathKey(selected.absolutePath) && watch.branch === "main"))}
+            watchMainBusy={watchMainBusy}
+          />
+        </div>
+        <div id="ci-watch-view" className="workspace-pane" role="tabpanel" aria-labelledby="ci-watch-tab" hidden={view !== "ci"}>
+          <CiWatch
+            repos={repoRoot === settings.rootFolder ? repos : []}
+            watches={settings.ciWatches ?? []}
+            root={settings.rootFolder}
+            intervalMinutes={settings.refreshIntervalMinutes}
+            active={view === "ci"}
+            onWatchesChanged={(ciWatches) => setSettings((current) => ({ ...current, ciWatches }))}
+            onOpenRepository={(repo) => { setSelectedId(repo.id); setView("repositories"); }}
+          />
+        </div>
+      </div>
       <footer className="toast" aria-live="polite">{message}</footer>
       <SettingsDialog
         open={settingsOpen}

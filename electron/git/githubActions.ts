@@ -87,14 +87,14 @@ function privateRepoFix(status: number, tokenPresent: boolean): string {
   return "Check network access to api.github.com and verify the configured GitHub token can read repository Actions.";
 }
 
-function describeGitHubError(error: unknown): string {
+export function describeGitHubError(error: unknown): string {
   if (error instanceof GitHubApiError) {
     return `${error.message} ${error.fix}`;
   }
   return error instanceof Error ? error.message : String(error);
 }
 
-async function githubFetch<T>(url: string): Promise<T> {
+export async function githubFetch<T>(url: string): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   const token = getGitHubToken();
