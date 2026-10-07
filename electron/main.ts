@@ -19,6 +19,8 @@ import { getPackageVersionInfo } from "./git/versionBump.js";
 import { getBranchComparison } from "./git/branchComparison.js";
 import { addCiWatch, removeCiWatch, getCiWorkflows, getCiRun, getCiJobs } from "./git/ciWatch.js";
 import type { CiWatchInput } from "../src/types/ci.js";
+import { getDevelopPullRequestPreview, promoteDevelop } from "./git/pullRequests.js";
+import type { DevelopPullRequestPreview } from "../src/types/api.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
@@ -58,6 +60,12 @@ function rootFolder(): string {
 function ciRootFolder(): string {
   const root = getSettings().rootFolder;
   if (!root) throw new Error("Choose a root folder before using CI Watch.");
+  return root;
+}
+
+function pullRequestRootFolder(): string {
+  const root = getSettings().rootFolder;
+  if (!root) throw new Error("Choose a root folder before creating a pull request.");
   return root;
 }
 
@@ -332,6 +340,8 @@ function registerIpc() {
   ipcMain.handle("repo:discover", (_event, options: Omit<ScanOptions, "fetch">) => discoverRepoShells(options.root, options.includeNestedRepositories));
   ipcMain.handle("repo:refresh", (_event, repoPath: string, fetch = true) => getRepositoryStatus(repoPath, rootFolder(), fetch));
   ipcMain.handle("repo:branchComparison", (_event, repoPath: string) => getBranchComparison(repoPath));
+  ipcMain.handle("repo:developPullRequestPreview", (_event, repoPath: string) => getDevelopPullRequestPreview(repoPath, pullRequestRootFolder()));
+  ipcMain.handle("repo:promoteDevelop", (_event, repoPath: string, expected: DevelopPullRequestPreview) => promoteDevelop(repoPath, pullRequestRootFolder(), expected));
   ipcMain.handle("ci:addWatch", (_event, watch: CiWatchInput) => addCiWatch(watch, ciRootFolder()));
   ipcMain.handle("ci:removeWatch", (_event, id: string) => removeCiWatch(id));
   ipcMain.handle("ci:workflows", (_event, repoPath: string) => getCiWorkflows(repoPath, ciRootFolder()));

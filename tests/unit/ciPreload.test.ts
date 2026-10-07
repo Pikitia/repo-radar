@@ -5,6 +5,18 @@ const electron = vi.hoisted(() => ({ exposeInMainWorld: vi.fn(), invoke: vi.fn()
 vi.mock("electron", () => ({ contextBridge: { exposeInMainWorld: electron.exposeInMainWorld }, ipcRenderer: { invoke: electron.invoke } }));
 
 describe("CI preload contract", () => {
+  it("exposes only typed develop PR preview and confirmed promotion channels", async () => {
+    await import("../../electron/preload.js");
+    const api = electron.exposeInMainWorld.mock.calls[0][1] as RepoRadarApi;
+    electron.invoke.mockClear();
+    const expected = { repository: "example/repo", developSha: "a".repeat(40), mainSha: "b".repeat(40), ahead: 1 };
+    await api.getDevelopPullRequestPreview("C:/root/repo");
+    await api.promoteDevelop("C:/root/repo", expected);
+    expect(electron.invoke.mock.calls).toEqual([
+      ["repo:developPullRequestPreview", "C:/root/repo"], ["repo:promoteDevelop", "C:/root/repo", expected]
+    ]);
+    electron.invoke.mockClear();
+  });
   it("maps typed watch operations to the narrow main-process channels", async () => {
     await import("../../electron/preload.js");
     expect(electron.exposeInMainWorld).toHaveBeenCalledWith("repoRadar", expect.any(Object));

@@ -120,6 +120,19 @@ try {
     catch (error) { return error.message; }
   }, userData);
   assert.match(rejection, /outside the selected root/);
+  const pullRequestRejections = await window.evaluate(async (outside) => {
+    const errors = [];
+    for (const operation of [
+      () => window.repoRadar.getDevelopPullRequestPreview(outside),
+      () => window.repoRadar.promoteDevelop(outside, { repository: "example/storefront", developSha: "a".repeat(40), mainSha: "b".repeat(40), ahead: 1 })
+    ]) {
+      try { await operation(); errors.push("accepted"); }
+      catch (error) { errors.push(error.message); }
+    }
+    return errors;
+  }, userData);
+  for (const error of pullRequestRejections) assert.match(error, /outside the selected root/);
+  console.log("Electron smoke passed: typed pull request channels enforce selected-root validation.");
   await overview.getByRole("button", { name: "Remove watch for storefront production Deploy production", exact: true }).click();
   await overview.getByRole("button", { name: "Remove watch for storefront main latest run", exact: true }).click();
   await overview.getByText("No watched branches yet", { exact: true }).waitFor();

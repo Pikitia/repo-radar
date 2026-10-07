@@ -102,7 +102,7 @@ export function BranchComparisonTab({ repo, onMessage, onRepoUpdated }: Props) {
         <section className="commit-compare-layout">
           <div className="compare-commit-list">
             {commits.map((commit) => (
-              <button key={commit.hash} className={selected?.hash === commit.hash ? "selected" : ""} onClick={() => setSelected(commit)}>
+              <button key={commit.hash} title={`View commit ${commit.hash.slice(0, 8)}: ${commit.subject}`} className={selected?.hash === commit.hash ? "selected" : ""} onClick={() => setSelected(commit)}>
                 <strong>{commit.subject}</strong>
                 <span>{commit.hash.slice(0, 8)} - {commit.author} - {new Date(commit.date).toLocaleString()}</span>
                 {commit.body.trim() && <p>{commit.body.trim()}</p>}

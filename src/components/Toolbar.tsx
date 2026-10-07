@@ -1,4 +1,4 @@
-import { CheckCircle2, Code2, Copy, Download, FolderOpen, GitCommit, GitPullRequest, Globe, RefreshCw, Terminal, Upload, RotateCw } from "lucide-react";
+import { CheckCircle2, Code2, Copy, Download, FolderOpen, GitCommit, GitPullRequest, GitMerge, Globe, RefreshCw, Terminal, Upload, RotateCw } from "lucide-react";
 import type { NpmScriptCommand } from "../types/api";
 import type { RepoStatus } from "../types/repo";
 import { actionAvailability } from "../state/repoLogic";
@@ -20,6 +20,7 @@ type Props = {
   onTerminal(): void;
   onCopy(): void;
   onRemote(): void;
+  onPromoteDevelop(): void;
 };
 
 export function Toolbar(props: Props) {
@@ -48,11 +49,14 @@ export function Toolbar(props: Props) {
         </button>
       )}
       <span className="toolbar-separator" />
-      <button title="Open in VS Code" onClick={props.onVSCode}><Code2 size={15} /></button>
-      <button title="Open in Explorer" onClick={props.onExplorer}><FolderOpen size={15} /></button>
-      <button title="Open terminal here" onClick={props.onTerminal}><Terminal size={15} /></button>
-      <button title="Copy path" onClick={props.onCopy}><Copy size={15} /></button>
-      <button title="Open remote" onClick={props.onRemote}><Globe size={15} /></button>
+      {props.repo.branchComparisonLoaded && (props.repo.branchComparison?.developAheadMain ?? 0) > 0 && (
+        <button title="Create a PR from origin/develop to origin/main and merge after GitHub checks" aria-label="Merge origin/develop into origin/main" disabled={props.busy || props.repo.statusLoading || props.repo.branchComparisonLoading} onClick={props.onPromoteDevelop}><GitMerge size={15} /></button>
+      )}
+      <button title="Open in VS Code" aria-label="Open in VS Code" onClick={props.onVSCode}><Code2 size={15} /></button>
+      <button title="Open in Explorer" aria-label="Open in Explorer" onClick={props.onExplorer}><FolderOpen size={15} /></button>
+      <button title="Open terminal here" aria-label="Open terminal here" onClick={props.onTerminal}><Terminal size={15} /></button>
+      <button title="Copy path" aria-label="Copy path" onClick={props.onCopy}><Copy size={15} /></button>
+      <button title="Open remote" aria-label="Open remote" onClick={props.onRemote}><Globe size={15} /></button>
     </div>
   );
 }

@@ -42,7 +42,7 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
       <div className="modal settings-modal">
         <header>
           <h2>Settings</h2>
-          <button onClick={onClose}>Close</button>
+          <button title="Close settings without saving" onClick={onClose}>Close</button>
         </header>
         {!settings ? <div className="empty-panel">Loading settings...</div> : (
           <div className="settings-grid">
@@ -51,7 +51,7 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
               Default root folder
               <div className="path-picker">
                 <input readOnly value={settings.rootFolder ?? ""} placeholder="No folder selected" />
-                <button onClick={chooseRoot}>Choose</button>
+                <button title="Choose the folder containing your repositories" onClick={chooseRoot}>Choose</button>
               </div>
             </label>
             <label className="inline-check">
@@ -93,6 +93,7 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
             <div className="debug-box">
               <strong>GitHub Actions access</strong>
               <span>Private repositories need a GitHub token with repository access and Actions read permission.</span>
+              <span>Develop-to-main pull requests also need Pull requests and Contents read/write permissions. Enable Allow auto-merge in GitHub and require checks on main to wait for them.</span>
               <span>Environment mode reads GITHUB_TOKEN or GH_TOKEN when Repo Radar starts.</span>
             </div>
             <label>
@@ -128,7 +129,7 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
               <span>{debug?.version ?? "Git version unavailable"}</span>
               <span>{debug?.gitPath ?? "Git path unavailable"}</span>
             </div>
-            <button className="primary" onClick={save}>Save Settings</button>
+            <button title="Save application settings" className="primary" onClick={save}>Save Settings</button>
           </div>
         )}
       </div>

@@ -51,7 +51,7 @@ function RunDetails({ repoPath, run, checkedAt, refreshing }: { repoPath: string
       <a href={run.htmlUrl} onClick={(event) => { void openExternal(event); }}>Open run in GitHub <ExternalLink size={13} /></a>
     </div>
     {(loading || refreshing) && <p className="muted">Refreshing jobs…</p>}
-    {error && <div className="issue-box" role="alert">Could not refresh jobs. {jobs && "Showing previously loaded jobs. "}{error} <button onClick={() => setRetry((current) => current + 1)}>Retry jobs</button></div>}
+    {error && <div className="issue-box" role="alert">Could not refresh jobs. {jobs && "Showing previously loaded jobs. "}{error} <button title="Retry loading workflow jobs" onClick={() => setRetry((current) => current + 1)}>Retry jobs</button></div>}
     {jobs?.length === 0 && <p className="muted">No jobs reported yet. The workflow may be queued or waiting.</p>}
     {jobs?.map((job) => <article className="ci-job" key={job.id}>
       <div className="ci-job-heading"><strong>{job.name}</strong><Status status={job.status} conclusion={job.conclusion} /><span className="muted">{ciDuration(job.startedAt, job.completedAt, now)}</span><a href={job.htmlUrl} onClick={(event) => { void openExternal(event); }}>Job log <ExternalLink size={12} /></a></div>
@@ -137,8 +137,8 @@ export function CiWatch({ repos, watches, root, intervalMinutes, active, onWatch
     <header className="ci-watch-header">
       <div><h1>CI Watch</h1><p>Watched branches across all repositories</p></div>
       <div className="ci-watch-actions">
-        <button onClick={() => { void refresh(); }} disabled={refreshing || visibleWatches.length === 0}><RefreshCw size={14} />{refreshing ? "Refreshing…" : "Refresh CI"}</button>
-        <button onClick={() => { setAdding((current) => !current); setError(null); }} disabled={!repos.length || saving}><Plus size={14} />Watch branch</button>
+        <button title="Refresh watched GitHub Actions runs" onClick={() => { void refresh(); }} disabled={refreshing || visibleWatches.length === 0}><RefreshCw size={14} />{refreshing ? "Refreshing…" : "Refresh CI"}</button>
+        <button title="Choose a repository branch to watch" onClick={() => { setAdding((current) => !current); setError(null); }} disabled={!repos.length || saving}><Plus size={14} />Watch branch</button>
       </div>
     </header>
     <p className="ci-watch-hint">{intervalMinutes > 0 ? "Checks every 30 seconds while this view is open." : "Automatic refresh is disabled in Settings."} Choose a deployment workflow to track production.</p>
@@ -147,7 +147,7 @@ export function CiWatch({ repos, watches, root, intervalMinutes, active, onWatch
       <label>Repository<select value={chosenPath} onChange={(event) => setRepoPath(event.target.value)} disabled={saving}>{repos.map((repo) => <option key={repo.id} value={repo.absolutePath}>{repo.relativePath}</option>)}</select></label>
       <label>Branch<input value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="main or production" required maxLength={255} disabled={saving} /></label>
       <label>Workflow<select value={workflowId} onChange={(event) => setWorkflowId(event.target.value)} disabled={workflowLoading || saving}><option value="">Latest run on branch (any workflow)</option>{workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name} · {workflow.path}{workflow.state !== "active" ? " (disabled)" : ""}</option>)}</select></label>
-      <div className="ci-watch-form-buttons"><button className="primary" type="submit" disabled={saving || !chosenPath || !branch.trim() || workflowLoading}>{saving ? "Saving…" : "Add watch"}</button><button type="button" onClick={() => setAdding(false)} disabled={saving}>Cancel</button></div>
+      <div className="ci-watch-form-buttons"><button title="Save this branch watch" className="primary" type="submit" disabled={saving || !chosenPath || !branch.trim() || workflowLoading}>{saving ? "Saving…" : "Add watch"}</button><button title="Cancel adding a watch" type="button" onClick={() => setAdding(false)} disabled={saving}>Cancel</button></div>
       {workflowLoading && <p className="muted">Loading workflows…</p>}
       {workflowError && <p className="ci-form-error" role="alert">Could not list workflows. {workflowError}</p>}
     </form>}
@@ -160,7 +160,7 @@ export function CiWatch({ repos, watches, root, intervalMinutes, active, onWatch
           const detailsId = `ci-details-${watch.id}`;
           return <Fragment key={watch.id}>
             <tr className={`ci-summary-row${isExpanded ? " ci-expanded-row" : ""}`}>
-              <td><button className="icon-button" aria-label={`${isExpanded ? "Collapse" : "Expand"} ${repo.name} ${watch.branch} ${watch.workflowName ?? "latest run"}`} aria-expanded={isExpanded} aria-controls={detailsId} disabled={!run} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(watch.id)) next.delete(watch.id); else next.add(watch.id); return next; })}>{isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></td>
+              <td><button className="icon-button" title={`${isExpanded ? "Collapse" : "Expand"} workflow details`} aria-label={`${isExpanded ? "Collapse" : "Expand"} ${repo.name} ${watch.branch} ${watch.workflowName ?? "latest run"}`} aria-expanded={isExpanded} aria-controls={detailsId} disabled={!run} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(watch.id)) next.delete(watch.id); else next.add(watch.id); return next; })}>{isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></td>
               <td><button className="ci-repo-link" title={repo.relativePath} onClick={() => onOpenRepository(repo)}>{repo.name}</button></td>
               <td title={`${watch.branch}${watch.branch === repo.branch ? " (checked out)" : ""}`}>{watch.branch}</td>
               <td title={`${run?.workflowName ?? watch.workflowName ?? "Latest run on branch (any workflow)"}${run ? ` #${run.number}` : ""}`}>{run?.workflowName ?? watch.workflowName ?? "Latest run"}{run && <span className="muted"> #{run.number}</span>}</td>

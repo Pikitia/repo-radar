@@ -19,6 +19,20 @@ export type CommitPreview = {
 
 export type NpmScriptCommand = "verify" | "test";
 
+export type DevelopPullRequestPreview = {
+  repository: string;
+  developSha: string;
+  mainSha: string;
+  ahead: number;
+};
+
+export type DevelopPullRequestResult = {
+  number: number;
+  url: string;
+  outcome: "merged" | "auto-merge" | "blocked";
+  message: string;
+};
+
 export type NpmCommandEvent =
   | {
       runId: string;
@@ -45,6 +59,8 @@ export type RepoRadarApi = {
   scanRepositories(options: ScanOptions): Promise<RepoStatus[]>;
   refreshRepository(path: string, fetch?: boolean): Promise<RepoStatus>;
   getBranchComparison(path: string): Promise<BranchComparison | null>;
+  getDevelopPullRequestPreview(path: string): Promise<DevelopPullRequestPreview>;
+  promoteDevelop(path: string, expected: DevelopPullRequestPreview): Promise<DevelopPullRequestResult>;
   addCiWatch(watch: CiWatchInput): Promise<CiWatch[]>;
   removeCiWatch(id: string): Promise<CiWatch[]>;
   getCiWorkflows(path: string): Promise<CiWorkflow[]>;

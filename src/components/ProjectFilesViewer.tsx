@@ -34,7 +34,7 @@ export function ProjectFilesViewer({ repo }: Props) {
     <div className="diff-layout">
       <div className="file-list">
         {repo.projectFiles.map((file) => (
-          <button key={file.path} className={selected.path === file.path ? "selected" : ""} onClick={() => setSelected(file)}>
+          <button key={file.path} title={`Read ${file.path}`} className={selected.path === file.path ? "selected" : ""} onClick={() => setSelected(file)}>
             <span>{file.displayName}</span>
           </button>
         ))}
@@ -42,7 +42,7 @@ export function ProjectFilesViewer({ repo }: Props) {
       <div className="project-view">
         <div className="project-view-toolbar">
           <strong>{selected.displayName}</strong>
-          <button onClick={() => setRaw((value) => !value)}>{raw ? "Rendered" : "Raw"}</button>
+          <button title={raw ? "Show rendered document" : "Show document source"} onClick={() => setRaw((value) => !value)}>{raw ? "Rendered" : "Raw"}</button>
         </div>
         {selected.kind === "markdown" && !raw ? (
           <article className="markdown" dangerouslySetInnerHTML={{ __html: marked.parse(content) }} />

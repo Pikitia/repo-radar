@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/app/App";
 import { DiffViewer } from "../../src/components/DiffViewer.js";
-import type { NpmCommandEvent, RepoRadarApi } from "../../src/types/api";
+import type { DevelopPullRequestPreview, NpmCommandEvent, RepoRadarApi } from "../../src/types/api";
 import type { RepoStatus } from "../../src/types/repo";
 import type { AppSettings } from "../../src/types/settings";
 import { defaultSettings } from "../../src/types/settings";
@@ -41,6 +41,8 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     scanRepositories: vi.fn().mockResolvedValue([sampleRepo]),
     refreshRepository: vi.fn().mockResolvedValue(sampleRepo),
     getBranchComparison: vi.fn().mockResolvedValue(null),
+    getDevelopPullRequestPreview: vi.fn().mockResolvedValue({ repository: "example/repo-one", developSha: "a".repeat(40), mainSha: "b".repeat(40), ahead: 1 }),
+    promoteDevelop: vi.fn().mockResolvedValue({ number: 42, url: "https://github.com/example/repo-one/pull/42", outcome: "auto-merge", message: "Auto-merge enabled for pull request #42." }),
     addCiWatch: vi.fn().mockResolvedValue([]),
     removeCiWatch: vi.fn().mockResolvedValue([]),
     getCiWorkflows: vi.fn().mockResolvedValue([]),
@@ -88,6 +90,99 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
 }
 
 describe("App UI smoke", () => {
+  it("only offers remote promotion with both origin branches ahead, and creates nothing on cancellation", async () => {
+    const api = installApi();
+    vi.mocked(api.getBranchComparison).mockResolvedValue({
+      developRef: "origin/develop", mainRef: "origin/main", developVersion: null, mainVersion: null,
+      developAheadMain: 1, developBehindMain: 0, commitsInDevelopNotMain: []
+    });
+    render(<App />);
+    const button = await screen.findByRole("button", { name: "Merge origin/develop into origin/main" });
+    expect(button).toHaveAttribute("title", expect.stringContaining("GitHub checks"));
+    fireEvent.click(button);
+    const confirmation = await screen.findByRole("dialog", { name: "Merge develop into main: repo-one" });
+    await within(confirmation).findByText("example/repo-one");
+    expect(api.promoteDevelop).not.toHaveBeenCalled();
+    expect(api.push).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.promoteDevelop).not.toHaveBeenCalled();
+
+    cleanup();
+    const equalApi = installApi();
+    vi.mocked(equalApi.getBranchComparison).mockResolvedValue({
+      developRef: "origin/develop", mainRef: "origin/main", developVersion: null, mainVersion: null,
+      developAheadMain: 0, developBehindMain: 1, commitsInDevelopNotMain: []
+    });
+    render(<App />);
+    await screen.findByText("Original");
+    await waitFor(() => expect(equalApi.getBranchComparison).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Merge origin/develop into origin/main" })).not.toBeInTheDocument();
+
+    cleanup();
+    const missingApi = installApi();
+    render(<App />);
+    await screen.findByText("Original");
+    await waitFor(() => expect(missingApi.getBranchComparison).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Merge origin/develop into origin/main" })).not.toBeInTheDocument();
+  });
+
+  it("uses the fresh confirmed remote preview, prevents repeated submission, and shows the PR result", async () => {
+    const api = installApi();
+    vi.mocked(api.getBranchComparison).mockResolvedValue({
+      developRef: "origin/develop", mainRef: "origin/main", developVersion: null, mainVersion: null,
+      developAheadMain: 1, developBehindMain: 0, commitsInDevelopNotMain: []
+    });
+    const preview: DevelopPullRequestPreview = { repository: "example/repo-one", developSha: "c".repeat(40), mainSha: "d".repeat(40), ahead: 3 };
+    vi.mocked(api.getDevelopPullRequestPreview).mockResolvedValue(preview);
+    let finish: ((value: Awaited<ReturnType<RepoRadarApi["promoteDevelop"]>>) => void) | undefined;
+    vi.mocked(api.promoteDevelop).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Merge origin/develop into origin/main" }));
+    const confirm = await screen.findByRole("button", { name: "Confirm PR and merge" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(api.promoteDevelop).toHaveBeenCalledTimes(1));
+    expect(api.promoteDevelop).toHaveBeenCalledWith(sampleRepo.absolutePath, preview);
+    expect(screen.getByRole("button", { name: "Submitting…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(api.push).not.toHaveBeenCalled();
+    act(() => finish?.({ number: 42, url: "https://github.com/example/repo-one/pull/42", outcome: "auto-merge", message: "Auto-merge enabled. Waiting for checks." }));
+    const link = await screen.findByRole("link", { name: "Open pull request #42 in GitHub" });
+    expect(link).toHaveAttribute("href", "https://github.com/example/repo-one/pull/42");
+    fireEvent.click(link);
+    expect(api.openExternal).toHaveBeenCalledWith("https://github.com/example/repo-one/pull/42");
+  });
+
+  it("shows a remote preview error without allowing a write", async () => {
+    const api = installApi();
+    vi.mocked(api.getBranchComparison).mockResolvedValue({
+      developRef: "origin/develop", mainRef: "origin/main", developVersion: null, mainVersion: null,
+      developAheadMain: 1, developBehindMain: 0, commitsInDevelopNotMain: []
+    });
+    vi.mocked(api.getDevelopPullRequestPreview).mockRejectedValue(new Error("Both origin/develop and origin/main must exist."));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Merge origin/develop into origin/main" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Both origin/develop and origin/main must exist.");
+    expect(screen.queryByRole("button", { name: "Confirm PR and merge" })).not.toBeInTheDocument();
+    expect(api.promoteDevelop).not.toHaveBeenCalled();
+  });
+
+  it("refreshes remote promotion eligibility after a repository toolbar refresh", async () => {
+    const api = installApi();
+    const comparison = { developRef: "origin/develop", mainRef: "origin/main", developVersion: null, mainVersion: null,
+      developAheadMain: 1, developBehindMain: 0, commitsInDevelopNotMain: [] };
+    vi.mocked(api.getBranchComparison).mockResolvedValue(comparison);
+    vi.mocked(api.refreshRepository).mockResolvedValue({ ...sampleRepo, branchComparisonLoaded: false });
+    render(<App />);
+    await screen.findByRole("button", { name: "Merge origin/develop into origin/main" });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(api.getBranchComparison).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("button", { name: "Merge origin/develop into origin/main" })).toBeEnabled();
+    vi.mocked(api.getBranchComparison).mockResolvedValue({ ...comparison, developAheadMain: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Merge origin/develop into origin/main" })).not.toBeInTheDocument());
+  });
   let reportLayoutWidth: (width: number) => void;
 
   beforeEach(() => {

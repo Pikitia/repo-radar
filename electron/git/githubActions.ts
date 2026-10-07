@@ -70,6 +70,10 @@ function getGitHubToken(): string | undefined {
   return process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 }
 
+export function hasGitHubToken(): boolean {
+  return Boolean(getGitHubToken());
+}
+
 function privateRepoFix(status: number, tokenPresent: boolean): string {
   if (status === 401) {
     return "The GitHub token is missing, invalid, or expired. In Settings, use GitHub token source 'Environment' with GITHUB_TOKEN/GH_TOKEN, or 'Settings' and paste a token with repository access and Actions read permission.";
@@ -94,16 +98,18 @@ export function describeGitHubError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export async function githubFetch<T>(url: string): Promise<T> {
+export async function githubFetch<T>(url: string, options?: { body?: unknown; purpose: "pull-request" }): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   const token = getGitHubToken();
   try {
     const response = await fetch(url, {
       signal: controller.signal,
+      ...(options?.body !== undefined ? { method: "POST", body: JSON.stringify(options.body) } : {}),
       headers: {
         accept: "application/vnd.github+json",
         "user-agent": "Repo-Radar",
+        ...(options ? { "content-type": "application/json" } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {})
       }
     });
@@ -115,7 +121,10 @@ export async function githubFetch<T>(url: string): Promise<T> {
       } catch {
         // Keep the status-only message when the response is not JSON.
       }
-      throw new GitHubApiError(message, response.status, privateRepoFix(response.status, Boolean(token)));
+      const fix = options?.purpose === "pull-request"
+        ? "Check repository access and Pull requests read/write and Contents read/write permissions on the GitHub token in Settings. GitHub branch rules and auto-merge settings still apply."
+        : privateRepoFix(response.status, Boolean(token));
+      throw new GitHubApiError(message, response.status, fix);
     }
     return await response.json() as T;
   } finally {

@@ -206,8 +206,8 @@ export function App() {
       />
       <div className="workspace">
         <nav className="workspace-nav" role="tablist" aria-label="Main views">
-          <button id="repositories-tab" role="tab" aria-controls="repositories-view" aria-selected={view === "repositories"} className={view === "repositories" ? "active" : ""} onClick={() => setView("repositories")}>Repositories</button>
-          <button id="ci-watch-tab" role="tab" aria-controls="ci-watch-view" aria-selected={view === "ci"} className={view === "ci" ? "active" : ""} onClick={() => setView("ci")}>CI Watch</button>
+          <button title="Inspect local repositories" id="repositories-tab" role="tab" aria-controls="repositories-view" aria-selected={view === "repositories"} className={view === "repositories" ? "active" : ""} onClick={() => setView("repositories")}>Repositories</button>
+          <button title="Monitor GitHub Actions for watched branches" id="ci-watch-tab" role="tab" aria-controls="ci-watch-view" aria-selected={view === "ci"} className={view === "ci" ? "active" : ""} onClick={() => setView("ci")}>CI Watch</button>
         </nav>
         <div id="repositories-view" className="workspace-pane" role="tabpanel" aria-labelledby="repositories-tab" hidden={view !== "repositories"}>
           <RepoDetail

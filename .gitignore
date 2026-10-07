@@ -28,6 +28,7 @@ pnpm-debug.log*
 # Editor and OS files
 .vscode/
 .idea/
+.scratch/
 *.swp
 *.swo
 .DS_Store

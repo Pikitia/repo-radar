@@ -44,16 +44,16 @@ export function RepoSidebar(props: Props) {
           <span className="label">Root</span>
           <strong>{props.rootFolder ?? "Choose a folder"}</strong>
         </div>
-        <button className="icon-button" title="Settings" onClick={props.onSettings}>
+        <button className="icon-button" title="Settings" aria-label="Settings" onClick={props.onSettings}>
           <Settings size={16} />
         </button>
       </div>
-      <button className="full-button" onClick={props.onRefresh} disabled={!props.rootFolder || props.loading}>
+      <button title={!props.rootFolder ? "Choose a root folder in Settings first" : "Fetch and refresh all repositories"} className="full-button" onClick={props.onRefresh} disabled={!props.rootFolder || props.loading}>
         <RefreshCw size={15} /> {props.loading ? "Refreshing" : "Refresh All"}
       </button>
       <div className="filters">
         {filters.map((filter) => (
-          <button key={filter} className={props.filter === filter ? "active" : ""} onClick={() => props.onFilterChange(filter)}>
+          <button key={filter} title={`Filter repositories: ${filter}`} className={props.filter === filter ? "active" : ""} onClick={() => props.onFilterChange(filter)}>
             {filter}
           </button>
         ))}
@@ -63,7 +63,7 @@ export function RepoSidebar(props: Props) {
           <section key={group} className="repo-group">
             {group !== "/" && <h3>{group}</h3>}
             {repos.map((repo) => (
-              <button key={repo.id} className={`repo-row ${props.selectedId === repo.id ? "selected" : ""}`} onClick={() => props.onSelect(repo)}>
+              <button key={repo.id} title={`Inspect ${repo.absolutePath}`} className={`repo-row ${props.selectedId === repo.id ? "selected" : ""}`} onClick={() => props.onSelect(repo)}>
                 <span className="repo-title" title={repo.relativePath}>{repo.name}</span>
                 <span className="repo-meta">
                   <span className="branch-pill">{repo.statusLoading ? "loading" : repo.branch ?? "detached"}</span>

@@ -8,6 +8,7 @@ import { DiffViewer } from "./DiffViewer";
 import { ProjectFilesViewer } from "./ProjectFilesViewer";
 import { CommitDialog } from "./CommitDialog";
 import { BranchComparisonTab } from "./BranchComparisonTab";
+import { DevelopPullRequestDialog } from "./DevelopPullRequestDialog.js";
 
 type Props = {
   repo: RepoStatus | null;
@@ -48,6 +49,7 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
   const [tab, setTab] = useState<Tab | null>(null);
   const [busy, setBusy] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
+  const [promoteRepo, setPromoteRepo] = useState<RepoStatus | null>(null);
   const [npmCommandTabs, setNpmCommandTabs] = useState<NpmCommandTab[]>([]);
   const [verifyScript, setVerifyScript] = useState<NpmScriptCommand | null>(null);
 
@@ -115,7 +117,16 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
     setBusy(true);
     try {
       const updated = await action();
-      if (updated) onRepoUpdated(updated);
+      if (updated) {
+        onRepoUpdated(updated);
+        try {
+          const comparison = await window.repoRadar.getBranchComparison(updated.absolutePath);
+          onRepoUpdated({ ...updated, branchComparison: comparison, branchComparisonLoaded: true, branchComparisonLoading: false });
+        } catch (error) {
+          onRepoUpdated({ ...updated, branchComparison: null, branchComparisonLoaded: true, branchComparisonLoading: false,
+            warnings: [...updated.warnings, { code: "branch-comparison-failed", message: "Could not load Develop/Main comparison.", detail: error instanceof Error ? error.message : String(error) }] });
+        }
+      }
       onMessage(success);
     } catch (err) {
       onMessage(err instanceof Error ? err.message : String(err));
@@ -222,6 +233,7 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
         onTerminal={() => runAction(() => window.repoRadar.openTerminal(repo.absolutePath), "Opened terminal.")}
         onCopy={() => runAction(() => window.repoRadar.copyPath(repo.absolutePath), "Path copied.")}
         onRemote={() => runAction(() => window.repoRadar.openRemote(repo.absolutePath), "Opened remote.")}
+        onPromoteDevelop={() => setPromoteRepo(repo)}
       />
       <section className="status-strip">
         <span>Branch <b>{repo.branch ?? "detached"}</b></span>
@@ -243,10 +255,10 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
       )}
       <nav className="tabs">
         {tabs.map((item) => (
-          <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{tabLabels[item]}</button>
+          <button key={item} title={`Show ${tabLabels[item]}`} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{tabLabels[item]}</button>
         ))}
         {repoNpmCommandTabs.map((item) => (
-          <button key={item.id} className={tab === npmCommandTabId(item.id) ? "active tab-with-close" : "tab-with-close"} onClick={() => setTab(npmCommandTabId(item.id))}>
+          <button key={item.id} title={`Show ${item.label} output`} className={tab === npmCommandTabId(item.id) ? "active tab-with-close" : "tab-with-close"} onClick={() => setTab(npmCommandTabId(item.id))}>
             <span>{item.running ? `${item.label}...` : item.label}</span>
             {!item.running && (
               <span
@@ -331,6 +343,7 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
         )}
       </section>
       {commitOpen && <CommitDialog repo={repo} onClose={() => setCommitOpen(false)} onCommitted={onRepoUpdated} />}
+      {promoteRepo && <DevelopPullRequestDialog repo={promoteRepo} onClose={() => setPromoteRepo(null)} onRepoUpdated={onRepoUpdated} onMessage={onMessage} />}
     </main>
   );
 }

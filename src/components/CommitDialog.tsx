@@ -190,7 +190,7 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
       <div className="modal">
         <header>
           <h2>Commit {repo.name}</h2>
-          <button onClick={onClose}>Close</button>
+          <button title="Close commit dialog" onClick={onClose}>Close</button>
         </header>
         {!preview ? <div className="empty-panel">Loading commit state...</div> : (
           <>
@@ -200,23 +200,23 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
               <section>
                 <div className="file-group-header">
                   <h3>Staged</h3>
-                  <button disabled={busy || preview.staged.length === 0} onClick={() => unstageFiles(preview.staged)}>Unstage all</button>
+                  <button title="Unstage all staged files" disabled={busy || preview.staged.length === 0} onClick={() => unstageFiles(preview.staged)}>Unstage all</button>
                 </div>
                 {preview.staged.length ? fileCheckboxes(preview.staged, selected, toggle) : <p>No staged files.</p>}
                 <div className="file-group-header">
                   <h3>Unstaged</h3>
-                  <button disabled={busy || preview.unstaged.length === 0} onClick={() => stageFiles(preview.unstaged)}>Stage all</button>
+                  <button title="Stage all unstaged files" disabled={busy || preview.unstaged.length === 0} onClick={() => stageFiles(preview.unstaged)}>Stage all</button>
                 </div>
                 {preview.unstaged.length ? fileCheckboxes(preview.unstaged, selected, toggle) : <p>No unstaged files.</p>}
                 <div className="file-group-header">
                   <h3>Untracked</h3>
-                  <button disabled={busy || preview.untracked.length === 0} onClick={() => stageFiles(preview.untracked)}>Stage all</button>
+                  <button title="Stage all untracked files" disabled={busy || preview.untracked.length === 0} onClick={() => stageFiles(preview.untracked)}>Stage all</button>
                 </div>
                 {preview.untracked.length ? fileCheckboxes(preview.untracked, selected, toggle) : <p>No untracked files.</p>}
                 <div className="row-actions">
-                  <button disabled={busy || stageableFiles.length === 0} onClick={() => stageFiles(stageableFiles)}>Stage all changes</button>
-                  <button disabled={busy || selected.size === 0} onClick={stageSelected}>Stage selected</button>
-                  <button disabled={busy || stagedSelected.length === 0} onClick={unstageSelected}>Unstage selected</button>
+                  <button title="Stage all unstaged and untracked files" disabled={busy || stageableFiles.length === 0} onClick={() => stageFiles(stageableFiles)}>Stage all changes</button>
+                  <button title="Stage selected files" disabled={busy || selected.size === 0} onClick={stageSelected}>Stage selected</button>
+                  <button title="Unstage selected staged files" disabled={busy || stagedSelected.length === 0} onClick={unstageSelected}>Unstage selected</button>
                 </div>
               </section>
               <section>
@@ -237,8 +237,8 @@ export function CommitDialog({ repo, onClose, onCommitted }: Props) {
                 )}
                 <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Commit message" />
                 <div className="commit-actions">
-                  <button className="primary" disabled={!canCommit} onClick={() => doCommit(false)}>Commit</button>
-                  <button className="primary" disabled={!canCommit} onClick={() => doCommit(true)}>Commit and Push</button>
+                  <button title="Commit staged changes with this message" className="primary" disabled={!canCommit} onClick={() => doCommit(false)}>Commit</button>
+                  <button title="Commit staged changes and push the current branch" className="primary" disabled={!canCommit} onClick={() => doCommit(true)}>Commit and Push</button>
                 </div>
                 <div className="do-everything-actions">
                   <button className="primary do-everything-button" disabled={!canDoEverything} title={preview.aiAvailable ? "Stage all changes, bump version, generate an AI message, commit, and push." : "AI provider unavailable."} onClick={doEverything}>

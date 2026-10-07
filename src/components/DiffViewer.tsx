@@ -70,7 +70,7 @@ export function DiffViewer({ repo, mode }: Props) {
     <div ref={layoutRef} className="diff-layout resizable-diff-layout" style={{ "--file-list-width": `${visibleFileListWidth}px` } as CSSProperties}>
       <div className="file-list">
         {files.map((file) => (
-          <button key={`${file.path}-${file.kind}`} className={selected?.path === file.path ? "selected" : ""} onClick={() => setSelected(file)}>
+          <button key={`${file.path}-${file.kind}`} title={`View changes in ${file.path}`} className={selected?.path === file.path ? "selected" : ""} onClick={() => setSelected(file)}>
             <span title={file.path}>{file.path}</span>
             <b>{file.kind}</b>
           </button>

@@ -1,27 +1,15 @@
 import path from "node:path";
-import { realpath } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { CiWatch, CiWatchInput, CiWorkflow, CiRun, CiJob } from "../../src/types/ci.js";
 import { getSettings, updateSettings } from "../settings.js";
 import { runGit } from "./exec.js";
 import { describeGitHubError, githubFetch, parseGitHubRemote } from "./githubActions.js";
 
+import { validateRepositoryPath as validateCiRepository } from "./repositoryPath.js";
+export { validateCiRepository };
+
 function samePath(left: string, right: string): boolean {
   return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
-}
-
-export async function validateCiRepository(repoPath: string, rootPath: string): Promise<string> {
-  if (typeof repoPath !== "string" || !path.isAbsolute(repoPath)) throw new Error("Choose a repository inside the selected root.");
-  const [root, repository] = await Promise.all([realpath(rootPath), realpath(repoPath)]);
-  const relative = path.relative(root, repository);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error("Repository is outside the selected root.");
-  }
-  const topLevel = await runGit(repository, ["rev-parse", "--show-toplevel"]);
-  if (!samePath(await realpath(topLevel.stdout.trim()), repository)) {
-    throw new Error("Choose the repository root, not a subfolder.");
-  }
-  return repository;
 }
 
 async function githubRepository(repoPath: string, rootPath: string): Promise<{ path: string; api: string }> {
