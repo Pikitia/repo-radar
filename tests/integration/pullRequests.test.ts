@@ -13,7 +13,7 @@ const realGit = git.runGit;
 let root: string;
 let repository: string;
 let remote: string;
-let request: ReturnType<typeof vi.fn>;
+let request: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => ReturnType<typeof response> | Promise<ReturnType<typeof response>>>>;
 let developSha: string;
 let mainSha: string;
 let mergeState: Record<string, unknown>;
@@ -25,7 +25,7 @@ function response(body: unknown, status = 200) {
 }
 
 function mutations() {
-  return request.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(call[1].body));
+  return request.mock.calls.filter((call) => call[1]?.method === "POST").map((call) => JSON.parse(String(call[1]!.body)));
 }
 
 describe("origin develop pull requests", () => {
@@ -174,7 +174,7 @@ describe("origin develop pull requests", () => {
   it("reports GraphQL errors without losing the created PR", async () => {
     const normal = request.getMockImplementation()!;
     request.mockImplementation((url, init) => {
-      const body = init?.body ? JSON.parse(init.body) : null;
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
       return body?.query?.startsWith("mutation") ? response({ errors: [{ message: "Auto-merge is not permitted" }] }) : normal(url, init);
     });
     const result = await promoteDevelop(repository, root, await getDevelopPullRequestPreview(repository, root));
@@ -186,7 +186,7 @@ describe("origin develop pull requests", () => {
     const normal = request.getMockImplementation()!;
     let reads = 0;
     request.mockImplementation((url, init) => {
-      const body = init?.body ? JSON.parse(init.body) : null;
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
       if (body?.query?.startsWith("query") && reads++ === 0) return response({ data: { node: { ...mergeState, mergeStateStatus: "UNKNOWN" } } });
       return normal(url, init);
     });

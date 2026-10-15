@@ -1,6 +1,6 @@
 {
   "name": "repo-radar",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Windows desktop GUI for monitoring Git status across local repositories.",
   "main": "dist-electron/electron/main.js",
   "type": "module",
@@ -44,7 +44,7 @@
     "electron-store": "^10.1.0",
     "lucide-react": "^0.468.0",
     "marked": "^15.0.3",
-    "vite": "^6.0.7"
+    "vite": "^6.4.3"
   },
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
@@ -54,9 +54,9 @@
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/coverage-v8": "^4.1.11",
     "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.17.0",
     "eslint": "^9.17.0",
     "jsdom": "^25.0.1",
     "playwright": "^1.49.1",
@@ -64,6 +64,6 @@
     "react-dom": "^18.3.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.61.0",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.11"
   }
 }
