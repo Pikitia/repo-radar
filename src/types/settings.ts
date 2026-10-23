@@ -6,6 +6,7 @@ export type AiKeySource = "environment" | "settings";
 export type GitHubTokenSource = "environment" | "settings";
 
 export type AppSettings = {
+  databaseMcpEnabled: boolean;
   rootFolder: string | null;
   includeNestedRepositories: boolean;
   pullStrategy: PullStrategy;
@@ -25,6 +26,7 @@ export type AppSettings = {
 };
 
 export const defaultSettings: AppSettings = {
+  databaseMcpEnabled: true,
   rootFolder: null,
   includeNestedRepositories: false,
   pullStrategy: "git-config",
@@ -40,3 +42,10 @@ export const defaultSettings: AppSettings = {
     apiKeySource: "environment"
   }
 };
+
+export interface DatabaseMcpStatus {
+  enabled: boolean;
+  running: boolean;
+  url?: string;
+  error?: string;
+}

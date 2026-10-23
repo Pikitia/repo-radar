@@ -16,6 +16,7 @@ export function getSettings(): AppSettings {
   return {
     ...defaultSettings,
     ...store.store,
+    databaseMcpEnabled: typeof store.store.databaseMcpEnabled === "boolean" ? store.store.databaseMcpEnabled : true,
     github: {
       ...defaultSettings.github,
       ...(store.store.github ?? {})
@@ -28,6 +29,7 @@ export function getSettings(): AppSettings {
 }
 
 export function updateSettings(partial: Partial<AppSettings>): AppSettings {
+  if (partial.databaseMcpEnabled !== undefined && typeof partial.databaseMcpEnabled !== "boolean") throw new Error("MCP enabled setting must be true or false.");
   const current = getSettings();
   const next: AppSettings = {
     ...current,

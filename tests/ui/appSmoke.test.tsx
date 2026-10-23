@@ -34,6 +34,12 @@ const sampleRepo: RepoStatus = {
 
 function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C:/root" }) {
   const api: RepoRadarApi = {
+    databases: {
+      verifyTargets: vi.fn().mockResolvedValue([]), overview: vi.fn().mockResolvedValue({ profiles: [], servers: [], proposals: [], releases: [], rehearsals: [], activeRun: null, lastRun: null }),
+      saveServerConnection: vi.fn(), getServerConnection: vi.fn(), saveServerCredentials: vi.fn(), discoverDatabases: vi.fn(), assignDatabases: vi.fn(), saveProfile: vi.fn(), saveCredentials: vi.fn(), inspect: vi.fn(), acceptIdentity: vi.fn(), compare: vi.fn(), importProposal: vi.fn(), sealRelease: vi.fn(), history: vi.fn(), createPlan: vi.fn(), runPlan: vi.fn(), rehearse: vi.fn(), exportLibrary: vi.fn(), importLibrary: vi.fn(), configureDiagnostics: vi.fn(), recordRestoreVerification: vi.fn()
+    },
+    getDatabaseMcpStatus: vi.fn().mockResolvedValue({ enabled: true, running: true, url: "http://127.0.0.1:47321/mcp" }),
+    copyDatabaseMcpConfig: vi.fn().mockResolvedValue(undefined),
     getSettings: vi.fn().mockResolvedValue(settings),
     updateSettings: vi.fn().mockResolvedValue(settings),
     chooseRootFolder: vi.fn().mockResolvedValue("C:/root"),

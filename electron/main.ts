@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -20,14 +20,28 @@ import { getBranchComparison } from "./git/branchComparison.js";
 import { addCiWatch, removeCiWatch, getCiWorkflows, getCiRun, getCiJobs } from "./git/ciWatch.js";
 import type { CiWatchInput } from "../src/types/ci.js";
 import { getDevelopPullRequestPreview, promoteDevelop } from "./git/pullRequests.js";
+import { registerDatabaseIpc, databaseOperationActive, withDatabaseRootChange } from "./databases/ipc.js";
+import { databaseStorageDirectory, preserveLegacyDatabaseStorage } from "./databases/storagePaths.js";
+import { LocalDatabaseMcpServer } from "./databases/mcpHttp.js";
 import type { DevelopPullRequestPreview } from "../src/types/api.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
 const runningNpmCommands = new Map<string, ChildProcess>();
+const databaseMcpMode = process.argv.includes("--database-mcp");
+let localDatabaseMcp: LocalDatabaseMcpServer | undefined;
+let closingLocalDatabaseMcp = false;
+let localDatabaseMcpClosed = false;
 
 if (process.env.REPO_RADAR_USER_DATA) {
   app.setPath("userData", process.env.REPO_RADAR_USER_DATA);
+}
+// Chromium removes userData/databases as obsolete WebSQL storage when creating
+// a BrowserWindow. Preserve any surviving application vault before that happens.
+let databaseStorageError: Error | undefined;
+if (!databaseMcpMode) {
+  try { preserveLegacyDatabaseStorage(app.getPath("userData")); }
+  catch (error) { databaseStorageError = error instanceof Error ? error : new Error("Saved database settings could not be preserved."); }
 }
 
 function createWindow() {
@@ -42,6 +56,13 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false
+    }
+  });
+
+  mainWindow.on("close", event => {
+    if (databaseOperationActive()) {
+      event.preventDefault();
+      void dialog.showMessageBox(mainWindow, { type: "warning", title: "Database operation in progress", message: "Wait for the database operation to finish before closing this window.", buttons: ["Keep Repo Radar open"] });
     }
   });
 
@@ -331,7 +352,29 @@ async function discoverRepoShells(root: string, includeNestedRepositories: boole
 
 function registerIpc() {
   ipcMain.handle("settings:get", () => getSettings());
-  ipcMain.handle("settings:update", (_event, settings) => updateSettings({ ...settings, ciWatches: getSettings().ciWatches }));
+  const requireMainView = (event: IpcMainInvokeEvent) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) throw new Error("MCP settings require Repo Radar's main application view.");
+  };
+  ipcMain.handle("database-mcp:status", event => {
+    requireMainView(event);
+    return localDatabaseMcp?.status() ?? { enabled: getSettings().databaseMcpEnabled, running: false };
+  });
+  ipcMain.handle("database-mcp:copyConfig", event => {
+    requireMainView(event);
+    if (!localDatabaseMcp) throw new Error("Local MCP server is unavailable.");
+    const { url, token } = localDatabaseMcp.connectionDetails();
+    clipboard.writeText(JSON.stringify({ mcpServers: { "repo-radar-dev-databases": { url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2));
+  });
+  ipcMain.handle("settings:update", async (_event, settings) => {
+    let saved;
+    if (settings.rootFolder !== undefined && settings.rootFolder !== getSettings().rootFolder) {
+      saved = await withDatabaseRootChange(app.getPath("userData"), () => updateSettings({ ...settings, ciWatches: getSettings().ciWatches }));
+    } else {
+      saved = updateSettings({ ...settings, ciWatches: getSettings().ciWatches });
+    }
+    await localDatabaseMcp?.setEnabled(saved.databaseMcpEnabled);
+    return saved;
+  });
   ipcMain.handle("dialog:chooseRootFolder", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     return result.canceled ? null : result.filePaths[0];
@@ -400,14 +443,43 @@ function registerIpc() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (databaseStorageError) {
+    dialog.showErrorBox("Saved database settings need attention", databaseStorageError.message);
+    app.quit();
+    return;
+  }
+  if (databaseMcpMode) {
+    if (!getSettings().databaseMcpEnabled) { app.quit(); return; }
+    const { startDatabaseMcp } = await import("./databases/mcp.js");
+    await startDatabaseMcp(databaseStorageDirectory(app.getPath("userData")), safeStorage, () => app.quit(), { enabled: () => getSettings().databaseMcpEnabled });
+    return;
+  }
+  localDatabaseMcp = new LocalDatabaseMcpServer(databaseStorageDirectory(app.getPath("userData")), safeStorage, { dependencies: { enabled: () => getSettings().databaseMcpEnabled } });
+  await localDatabaseMcp.setEnabled(getSettings().databaseMcpEnabled);
   registerIpc();
+  registerDatabaseIpc(app.getPath("userData"));
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
+app.on("before-quit", event => {
+  if (!databaseMcpMode && databaseOperationActive()) {
+    event.preventDefault();
+    void dialog.showMessageBox({ type: "warning", title: "Database operation in progress", message: "Wait for the database operation to finish before closing Repo Radar.", detail: "Forcing the process to stop can leave an uncertain outcome. History will block automatic retry until reviewed.", buttons: ["Keep Repo Radar open"] });
+    return;
+  }
+  if (!databaseMcpMode && localDatabaseMcp && !localDatabaseMcpClosed) {
+    event.preventDefault();
+    if (!closingLocalDatabaseMcp) {
+      closingLocalDatabaseMcp = true;
+      void localDatabaseMcp.close().catch(() => undefined).finally(() => { localDatabaseMcpClosed = true; app.quit(); });
+    }
+  }
+});
+
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (!databaseMcpMode && process.platform !== "darwin") app.quit();
 });

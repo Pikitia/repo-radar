@@ -1,22 +1,28 @@
 import { useEffect, useState } from "react";
 import type { AppSettings } from "../types/settings";
+import { DatabaseSettings } from "./DatabaseSettings.js";
 
 type Props = {
   open: boolean;
   onClose(): void;
   onSaved(settings: AppSettings): void;
+  initialTab?: "general" | "databases";
+  initialDatabaseProfileId?: string;
+  onDatabaseConfigurationChange?(): void;
 };
 
-export function SettingsDialog({ open, onClose, onSaved }: Props) {
+export function SettingsDialog({ open, onClose, onSaved, initialTab = "general", initialDatabaseProfileId, onDatabaseConfigurationChange }: Props) {
+  const [tab, setTab] = useState<"general" | "databases">(initialTab);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [debug, setDebug] = useState<{ gitPath: string; version: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    void window.repoRadar.getSettings().then(setSettings);
+    setTab(initialTab); setError(null);
+    void window.repoRadar.getSettings().then(setSettings).catch(err => setError(err instanceof Error ? err.message : String(err)));
     void window.repoRadar.getDebugInfo().then(setDebug).catch(() => setDebug(null));
-  }, [open]);
+  }, [open, initialTab]);
 
   if (!open) return null;
 
@@ -38,15 +44,17 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal settings-modal">
+    <div className="modal-backdrop" role="dialog" aria-label="Settings" aria-modal="true">
+      <div className={`modal settings-modal${tab === "databases" ? " database-settings-modal" : ""}`}>
         <header>
           <h2>Settings</h2>
           <button title="Close settings without saving" onClick={onClose}>Close</button>
         </header>
+        <nav className="settings-tabs" role="tablist" aria-label="Settings sections"><button id="settings-general-tab" role="tab" aria-selected={tab === "general"} aria-controls="settings-general" onClick={() => setTab("general")}>General</button><button id="settings-databases-tab" role="tab" aria-selected={tab === "databases"} aria-controls="settings-databases" onClick={() => setTab("databases")}>Databases</button></nav>
+        {error && <div className="issue-box" role="alert">{error}</div>}
         {!settings ? <div className="empty-panel">Loading settings...</div> : (
-          <div className="settings-grid">
-            {error && <div className="issue-box">{error}</div>}
+          <>
+          {tab === "databases" ? <div id="settings-databases" role="tabpanel" aria-labelledby="settings-databases-tab"><DatabaseSettings initialProfileId={initialDatabaseProfileId} mcpEnabled={settings.databaseMcpEnabled} onMcpEnabledChange={databaseMcpEnabled => setSettings({ ...settings, databaseMcpEnabled })} onConfigurationChange={onDatabaseConfigurationChange} /></div> : <div id="settings-general" role="tabpanel" aria-labelledby="settings-general-tab" className="settings-grid">
             <label>
               Default root folder
               <div className="path-picker">
@@ -129,8 +137,9 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
               <span>{debug?.version ?? "Git version unavailable"}</span>
               <span>{debug?.gitPath ?? "Git path unavailable"}</span>
             </div>
-            <button title="Save application settings" className="primary" onClick={save}>Save Settings</button>
-          </div>
+          </div>}
+          <div className="settings-save"><button title="Save application settings" className="primary" onClick={save}>Save Settings</button></div>
+          </>
         )}
       </div>
     </div>

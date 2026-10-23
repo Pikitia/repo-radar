@@ -1,4 +1,5 @@
-import type { AppSettings } from "./settings.js";
+import type { AppSettings, DatabaseMcpStatus } from "./settings.js";
+import type { DatabaseDesktopApi } from "./databaseApi.js";
 import type { CiWatch, CiWatchInput, CiWorkflow, CiRun, CiJob } from "./ci.js";
 import type { BranchComparison, DiffMode, DiffResult, RepoStatus, ProjectFile } from "./repo.js";
 
@@ -52,7 +53,10 @@ export type NpmCommandEvent =
     };
 
 export type RepoRadarApi = {
+  databases: DatabaseDesktopApi;
   getSettings(): Promise<AppSettings>;
+  getDatabaseMcpStatus(): Promise<DatabaseMcpStatus>;
+  copyDatabaseMcpConfig(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
   chooseRootFolder(): Promise<string | null>;
   discoverRepositories(options: Omit<ScanOptions, "fetch">): Promise<RepoStatus[]>;

@@ -6,6 +6,7 @@ import { RepoSidebar } from "../components/RepoSidebar";
 import { RepoDetail } from "../components/RepoDetail";
 import { SettingsDialog } from "../components/SettingsDialog";
 import { CiWatch } from "../components/CiWatch.js";
+import { Databases } from "../components/Databases.js";
 import { ciPathKey } from "../state/ciLogic.js";
 
 const sidebarDefaultWidth = 355;
@@ -23,10 +24,13 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [repos, setRepos] = useState<RepoStatus[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"repositories" | "ci">("repositories");
+  const [view, setView] = useState<"repositories" | "ci" | "databases">("repositories");
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [filter, setFilter] = useState<RepoFilter>("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"general" | "databases">("general");
+  const [settingsProfileId, setSettingsProfileId] = useState<string>();
+  const [databaseConfigurationVersion, setDatabaseConfigurationVersion] = useState(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [watchMainBusy, setWatchMainBusy] = useState(false);
@@ -158,7 +162,7 @@ export function App() {
         onFilterChange={setFilter}
         onSelect={(repo) => { setSelectedId(repo.id); setView("repositories"); }}
         onRefresh={() => refresh(true)}
-        onSettings={() => setSettingsOpen(true)}
+        onSettings={() => { setSettingsTab("general"); setSettingsProfileId(undefined); setSettingsOpen(true); }}
       />
       <div
         className="split-resizer"
@@ -208,6 +212,7 @@ export function App() {
         <nav className="workspace-nav" role="tablist" aria-label="Main views">
           <button title="Inspect local repositories" id="repositories-tab" role="tab" aria-controls="repositories-view" aria-selected={view === "repositories"} className={view === "repositories" ? "active" : ""} onClick={() => setView("repositories")}>Repositories</button>
           <button title="Monitor GitHub Actions for watched branches" id="ci-watch-tab" role="tab" aria-controls="ci-watch-view" aria-selected={view === "ci"} className={view === "ci" ? "active" : ""} onClick={() => setView("ci")}>CI Watch</button>
+          <button title="Review database structure and ordered migrations" id="databases-tab" role="tab" aria-controls="databases-view" aria-selected={view === "databases"} className={view === "databases" ? "active" : ""} onClick={() => setView("databases")}>Databases</button>
         </nav>
         <div id="repositories-view" className="workspace-pane" role="tabpanel" aria-labelledby="repositories-tab" hidden={view !== "repositories"}>
           <RepoDetail
@@ -230,10 +235,16 @@ export function App() {
             onOpenRepository={(repo) => { setSelectedId(repo.id); setView("repositories"); }}
           />
         </div>
+        <div id="databases-view" className="workspace-pane" role="tabpanel" aria-labelledby="databases-tab" hidden={view !== "databases"}>
+          <Databases active={view === "databases"} root={settings.rootFolder} repos={repoRoot === settings.rootFolder ? repos : []} onOpenRepository={(repo) => { setSelectedId(repo.id); setView("repositories"); }} onOpenCi={() => setView("ci")} onMessage={setMessage} configurationVersion={databaseConfigurationVersion} onOpenSettings={profileId => { setSettingsTab("databases"); setSettingsProfileId(profileId); setSettingsOpen(true); }} />
+        </div>
       </div>
       <footer className="toast" aria-live="polite">{message}</footer>
       <SettingsDialog
         open={settingsOpen}
+        initialTab={settingsTab}
+        initialDatabaseProfileId={settingsProfileId}
+        onDatabaseConfigurationChange={() => setDatabaseConfigurationVersion(current => current + 1)}
         onClose={() => setSettingsOpen(false)}
         onSaved={(next) => {
           setSettings(next);
