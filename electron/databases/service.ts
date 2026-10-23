@@ -2,10 +2,10 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { mkdir, rmdir } from "node:fs/promises";
 import type { DatabaseCredentialRole, DatabaseCredentials, DatabaseCredentialInput, DatabaseServerInput, DatabaseDiscovery, DatabaseProfile, DatabaseProfileInput, SchemaSnapshot } from "../../src/types/database.js";
-import type { DatabaseDesktopApi, DatabaseDiagnosticSetup, DatabaseOverview, DatabasePlanInput, DatabaseTargetVerification, RehearsalResult } from "../../src/types/databaseApi.js";
+import type { DatabaseDesktopApi, DatabaseDiagnosticSetup, DatabaseMcpAccessInput, DatabaseOverview, DatabasePlanInput, DatabaseTargetVerification, RehearsalResult } from "../../src/types/databaseApi.js";
 import type { AdmissionEvidence, DatabaseHistory, MigrationPlan, RunnerCheck, RunnerMigration, RunnerTarget } from "../../src/types/databaseExecution.js";
 import type { MigrationCheck, MigrationProposal, MigrationRelease } from "../../src/types/migration.js";
-import { connectDatabase, connectDatabaseServer, databaseDigest, readIdentity, readServerIdentity, type SqlSession } from "./connections.js";
+import { connectDatabase, connectDatabaseServer, DatabaseAccessError, databaseDigest, readIdentity, readServerIdentity, type SqlSession } from "./connections.js";
 import { DatabaseProfileStore, type DatabaseSecretProtector } from "./profileStore.js";
 import { captureSchema, compareSchemas } from "./schema.js";
 import { MigrationLibrary } from "./migrations.js";
@@ -13,7 +13,8 @@ import { MigrationRunner, appliedPrefix, readHistory } from "./runner.js";
 import { freezeSql } from "./sql.js";
 import { DatabaseEvidenceStore } from "./evidenceStore.js";
 import { rehearseOnEmptySandbox, runChecks, type ReplayEvidence } from "./rehearsal.js";
-import { saveDiagnosticConfig, disableDiagnosticConfig, collectDiagnosticSubmissions } from "./devConfig.js";
+import { saveDiagnosticConfig, disableDiagnosticConfig, collectDiagnosticSubmissions, loadMcpReadConfig, saveMcpReadConfig, revokeMcpTargets, parseMcpAccessInput } from "./devConfig.js";
+import { verifyReadOnlyDiagnosticGrants } from "./devQuery.js";
 import { restoreRecordSchema, type RestoreVerificationRecord } from "./restoreRecord.js";
 
 function text(value: unknown, name: string, max = 1000): asserts value is string {
@@ -142,10 +143,13 @@ export class DatabaseService implements DatabaseDesktopApi {
     const [profiles, servers, proposals, state] = await Promise.all([this.profiles.list(), this.profiles.listServers(), this.library.listProposals(), this.evidence.read()]);
     const keys = [...new Set([...profiles.map(profile => profile.databaseKey), ...proposals.map(proposal => proposal.manifest.databaseKey)])];
     const releases = (await Promise.all(keys.map(key => this.library.getRelease(key)))).filter((release): release is MigrationRelease => !!release);
-    return { profiles, servers, proposals, releases, rehearsals: state.replays.map(({ evidenceId, databaseKey, releaseDigest, createdAt, expiresAt, assessment, notes, migrationIds }) => ({ evidenceId, databaseKey, releaseDigest, createdAt, expiresAt, assessment, notes, migrationIds })), activeRun: this.active ? { ...this.active } : null, lastRun: state.runs.at(-1)?.result ?? null, submissionErrors };
+    let mcpAccess: DatabaseOverview["mcpAccess"] = [], mcpAccessError: string | undefined;
+    try { mcpAccess = (await loadMcpReadConfig(this.options.directory, this.options.protector)).targets.map(target => ({ profileId: target.profile.profileId, policy: target.policy })); }
+    catch { mcpAccessError = "Saved MCP access cannot be read. Database reads remain disabled until its protected configuration is repaired."; }
+    return { profiles, servers, proposals, releases, rehearsals: state.replays.map(({ evidenceId, databaseKey, releaseDigest, createdAt, expiresAt, assessment, notes, migrationIds }) => ({ evidenceId, databaseKey, releaseDigest, createdAt, expiresAt, assessment, notes, migrationIds })), activeRun: this.active ? { ...this.active } : null, lastRun: state.runs.at(-1)?.result ?? null, submissionErrors, mcpAccess, ...(mcpAccessError ? { mcpAccessError } : {}) };
   }
   private async revokeConfigurationEvidence(ids: string[]): Promise<void> {
-    await disableDiagnosticConfig(this.options.directory);
+    await revokeMcpTargets(this.options.directory, this.options.protector, ids);
     for (const id of ids) this.observed.delete(id);
     await this.evidence.update(state => {
       // A changed sandbox may have supplied proofs for another target.
@@ -202,6 +206,21 @@ export class DatabaseService implements DatabaseDesktopApi {
     // belongs to one unchanged server configuration.
     return this.change(() => this.discover(id));
   }
+  async checkServerConnection(id: string, role: DatabaseCredentialRole): Promise<{ status: "verified" | "failed"; message?: string }> {
+    text(id, "server connection ID", 80);
+    if (!["inspection", "migration", "diagnostic"].includes(role)) throw new Error("Invalid credential role.");
+    return this.change(async () => {
+      try {
+        const config = await this.profiles.getServerConfig(id, role);
+        const session = await (this.options.connectServer ?? connectDatabaseServer)(config);
+        try { await session.query("SELECT 1"); }
+        finally { await session.close(); }
+        return { status: "verified" };
+      } catch (error) {
+        return { status: "failed", message: error instanceof DatabaseAccessError ? error.message : "Connection failed. Check the saved endpoint, credentials and TLS settings." };
+      }
+    }, false);
+  }
   async assignDatabases(id: string, inputs: DatabaseProfileInput[]) {
     return this.change(async () => {
       if (!Array.isArray(inputs) || !inputs.length || inputs.length > 100 || inputs.some(input => !input || input.id !== undefined || input.serverConnectionId !== id)) throw new Error("Invalid database assignments.");
@@ -241,20 +260,20 @@ export class DatabaseService implements DatabaseDesktopApi {
     const profile = await this.profile(id);
     const first = await this.observeIdentity(id);
     if (profile.identity && !sameIdentity(profile.identity, first)) {
-      await disableDiagnosticConfig(this.options.directory);
+      await revokeMcpTargets(this.options.directory, this.options.protector, [id]);
       throw new TargetVerificationError("The database identity, engine, version or settings changed. Review the target configuration before accepting a replacement identity.");
     }
     const second = await this.observeIdentity(id);
     if (!sameIdentity(first, second)) {
-      await disableDiagnosticConfig(this.options.directory);
+      await revokeMcpTargets(this.options.directory, this.options.protector, [id]);
       throw new TargetVerificationError("The target changed during verification. Check its connection and try again.");
     }
     if ((await this.profiles.list()).some(other => other.id !== id && other.environment !== profile.environment && other.environment !== "sandbox" && profile.environment !== "sandbox" && other.identity?.fingerprint === second.fingerprint)) {
-      await disableDiagnosticConfig(this.options.directory);
+      await revokeMcpTargets(this.options.directory, this.options.protector, [id]);
       throw new TargetVerificationError("Dev and production cannot share the same database identity.");
     }
     if (!profile.identity) {
-      await disableDiagnosticConfig(this.options.directory);
+      await revokeMcpTargets(this.options.directory, this.options.protector, [id]);
       await this.evidence.update(state => { state.replays = state.replays.filter(item => item.targetId !== id); state.restores = state.restores.filter(item => item.targetId !== id); });
       await this.profiles.enrollIdentity(id, second);
     }
@@ -267,7 +286,7 @@ export class DatabaseService implements DatabaseDesktopApi {
       const results: DatabaseTargetVerification[] = [];
       for (const profileId of ids) {
         try { await this.verifyTargetIdentity(profileId); results.push({ profileId, status: "verified" }); }
-        catch (error) { results.push({ profileId, status: "failed", message: error instanceof TargetVerificationError ? error.message : "Unable to verify this target. Check its saved connection details, inspection credentials and database permissions." }); }
+        catch (error) { results.push({ profileId, status: "failed", message: error instanceof TargetVerificationError || error instanceof DatabaseAccessError ? error.message : "Unable to verify this target. Check its saved connection details, inspection credentials and database permissions." }); }
       }
       return results;
     });
@@ -275,7 +294,7 @@ export class DatabaseService implements DatabaseDesktopApi {
   async acceptIdentity(id: string, fingerprint: string): Promise<void> {
     return this.change(async () => {
     text(fingerprint, "identity fingerprint", 128);
-    await disableDiagnosticConfig(this.options.directory);
+    await revokeMcpTargets(this.options.directory, this.options.protector, [id]);
     const previous = this.observed.get(id);
     if (!previous || previous.identity.fingerprint !== fingerprint) throw new Error("Inspect this exact target before accepting its identity.");
     const current = await this.inspectTarget(id);
@@ -454,6 +473,31 @@ export class DatabaseService implements DatabaseDesktopApi {
   }
   async exportLibrary() { return this.library.exportLibrary(); }
   async importLibrary(serialized: string) { await this.change(() => this.library.importLibrary(serialized)); }
+  async setMcpReadAccess(value: DatabaseMcpAccessInput): Promise<void> {
+    const input = parseMcpAccessInput(value);
+    text(input.profileId, "profile ID", 100);
+    return this.change(async () => {
+      if (!input.enabled) { await revokeMcpTargets(this.options.directory, this.options.protector, [input.profileId]); return; }
+      const previous = await loadMcpReadConfig(this.options.directory, this.options.protector);
+      if (previous.legacy) await saveMcpReadConfig(this.options.directory, this.options.protector, { formatVersion: 2, targets: previous.targets, workspaceRoot: previous.workspaceRoot, repositories: previous.repositories });
+      const profile = await this.verifyTargetIdentity(input.profileId);
+      const server = await this.profiles.getServerDetails(profile.serverConnectionId);
+      const config = { ...await this.profiles.getServerConfig(profile.serverConnectionId, "diagnostic"), profileId: profile.id, databaseKey: profile.databaseKey, environment: profile.environment, database: profile.database, identity: profile.identity };
+      const session = await this.connect(config);
+      try {
+        const observed = await readIdentity(session, config.database);
+        if (!profile.identity || !sameIdentity(profile.identity, observed)) throw new Error("MCP target identity changed. Check the database before enabling access.");
+        await verifyReadOnlyDiagnosticGrants(session, config.database, true);
+      } finally { await session.close(); }
+      const current = await loadMcpReadConfig(this.options.directory, this.options.protector);
+      const root = this.options.root();
+      await saveMcpReadConfig(this.options.directory, this.options.protector, {
+        formatVersion: 2,
+        targets: [...current.targets.filter(target => target.profile.profileId !== profile.id), { profile: config, policy: input.policy, deniedIdentities: [], label: profile.label, serverLabel: server.label }],
+        ...(root ? { workspaceRoot: root } : {}), repositories: root ? await this.options.repositories() : []
+      });
+    });
+  }
   async configureDiagnostics(input: DatabaseDiagnosticSetup) {
     return this.change(async () => {
     if ((await this.profile(input.profileId)).environment !== "dev") throw new Error("Diagnostics require a development profile.");

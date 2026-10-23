@@ -9,6 +9,15 @@ beforeEach(() => { vi.resetAllMocks(); driver.createConnection.mockResolvedValue
 afterEach(() => vi.useRealTimers());
 
 describe("database driver error boundary", () => {
+  it.each([
+    ["ETIMEDOUT", "timed out"], ["ECONNREFUSED", "refused"], ["ENOTFOUND", "hostname"],
+    ["ER_ACCESS_DENIED_ERROR", "authentication"], ["CERT_HAS_EXPIRED", "TLS certificate"]
+  ])("keeps the safe connection failure category for %s without driver details", async (code, message) => {
+    driver.createConnection.mockRejectedValue(Object.assign(new Error("private-user private-password at private-host"), { code }));
+    const attempt = connectDatabaseServer({ serverConnectionId: "fixture", host: "fixture.invalid", port: 3306, credentials: config.credentials });
+    await expect(attempt).rejects.toThrow(message);
+    await expect(attempt).rejects.not.toThrow(/private-/);
+  });
   it.each(["query", "execute"] as const)("withholds native error details from %s", async operation => {
     const sensitive = new Error("Duplicate entry 'private-row-value' from private-user at private-host in SELECT private-secret");
     driver.query.mockRejectedValue(sensitive); driver.end.mockRejectedValue(sensitive);

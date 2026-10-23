@@ -10,6 +10,32 @@ export interface SqlSession {
 }
 export function databaseDigest(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 type ConnectionSettings = Pick<DatabaseServerConnectionConfig, "host" | "port" | "tlsMode" | "tlsCa" | "credentials">;
+const accessMessages = {
+  timeout: "Database connection timed out. Check server reachability, VPN/tunnel access and server load.",
+  refused: "Database connection was refused. Check the server address, port and whether it is listening.",
+  dns: "Database server hostname could not be resolved. Check DNS and VPN access.",
+  authentication: "Database authentication failed. Check the saved username, password and account host permissions.",
+  permission: "Database access was denied. Check the account's permissions for this database.",
+  missing: "Database was not found on this server. Rescan and check its saved name.",
+  tls: "Database TLS certificate verification failed. Check the hostname, certificate authority and certificate expiry.",
+  disconnected: "Database connection was interrupted. Check network stability, VPN/tunnel access and server load."
+};
+/** Fixed messages only: raw driver text can include credentials, SQL and row values. */
+export class DatabaseAccessError extends Error {
+  constructor(readonly category: keyof typeof accessMessages) { super(accessMessages[category]); }
+}
+function accessError(error: unknown, fallback: string): Error {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "ETIMEDOUT" || code === "PROTOCOL_SEQUENCE_TIMEOUT") return new DatabaseAccessError("timeout");
+  if (code === "ECONNREFUSED") return new DatabaseAccessError("refused");
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return new DatabaseAccessError("dns");
+  if (code === "ER_ACCESS_DENIED_ERROR") return new DatabaseAccessError("authentication");
+  if (code === "ER_DBACCESS_DENIED_ERROR" || code === "ER_TABLEACCESS_DENIED_ERROR") return new DatabaseAccessError("permission");
+  if (code === "ER_BAD_DB_ERROR") return new DatabaseAccessError("missing");
+  if (["CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID", "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "ERR_TLS_CERT_ALTNAME_INVALID", "HANDSHAKE_SSL_ERROR"].includes(String(code))) return new DatabaseAccessError("tls");
+  if (["ECONNRESET", "EPIPE", "EHOSTUNREACH", "ENETUNREACH", "PROTOCOL_CONNECTION_LOST"].includes(String(code))) return new DatabaseAccessError("disconnected");
+  return new Error(fallback);
+}
 
 async function createSession(config: ConnectionSettings, database?: string): Promise<SqlSession> {
   // Old protected profiles with a CA keep their verified transport until explicitly edited.
@@ -35,7 +61,7 @@ async function createSession(config: ConnectionSettings, database?: string): Pro
           const [rows] = await connection.query({ sql, timeout: 15_000 }, params);
           if (!Array.isArray(rows)) throw new Error("Expected database rows");
           return rows as Record<string, unknown>[];
-        } catch (error) { discardBrokenSession(error); throw new Error("Database query failed. Verify target permissions and supported SQL; driver details are withheld because they may contain data or secrets."); }
+        } catch (error) { discardBrokenSession(error); throw accessError(error, "Database query failed. Verify target permissions and supported SQL; driver details are withheld because they may contain data or secrets."); }
       },
       async execute(sql, params = []) {
         try { await connection.query({ sql, timeout: 30_000 }, params); }
@@ -53,7 +79,7 @@ async function createSession(config: ConnectionSettings, database?: string): Pro
       },
       destroy
     };
-  } catch { throw new Error("Database connection failed; verify the protected profile, credentials and TLS configuration"); }
+  } catch (error) { throw accessError(error, "Database connection failed; verify the protected profile, credentials and TLS configuration"); }
 }
 
 /** Inspection connection without selecting a schema; credentials remain main-process only. */

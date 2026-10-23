@@ -9,6 +9,8 @@ const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(ch
 
 const api: RepoRadarApi = {
   databases: {
+    setMcpReadAccess: (input) => invoke("db:setMcpReadAccess", input),
+    checkServerConnection: (id, role) => invoke("db:checkServerConnection", id, role),
     verifyTargets: (ids) => invoke("db:verifyTargets", ids),
     overview: () => invoke("db:overview"),
     saveServerConnection: (server) => invoke("db:saveServerConnection", server),

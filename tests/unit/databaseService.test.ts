@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseConnectionConfig, DatabaseIdentity, DatabaseServerConnectionConfig } from "../../src/types/database.js";
-import type { SqlSession } from "../../electron/databases/connections.js";
+import { DatabaseAccessError, type SqlSession } from "../../electron/databases/connections.js";
 import { DatabaseService } from "../../electron/databases/service.js";
 import * as diagnosticSubmissions from "../../electron/databases/devConfig.js";
 import type { MigrationProposal } from "../../src/types/migration.js";
@@ -52,6 +52,48 @@ async function setup(confirmed = true) {
 }
 
 describe("privileged database integration", () => {
+  it("preserves safe role-check timeout and login messages while continuing to redact unknown errors", async () => {
+    const { service, profile, connectServer } = await setup();
+    const dev = await profile();
+    for (const category of ["timeout", "authentication", "refused"] as const) {
+      const failure = new DatabaseAccessError(category);
+      connectServer.mockRejectedValueOnce(failure);
+      expect(await service.checkServerConnection(dev.serverConnectionId, "inspection")).toEqual({ status: "failed", message: failure.message });
+    }
+  });
+  it("checks each saved role without selecting a database, writing or exposing credentials", async () => {
+    const { service, profile, connectServer, discoveryClose, writes } = await setup();
+    const dev = await profile();
+    await service.saveServerCredentials(dev.serverConnectionId, "diagnostic", { username: "diagnose", password: "private" });
+    const query = vi.fn().mockResolvedValue([{ "1": 1 }]);
+    const execute = vi.fn();
+    connectServer.mockResolvedValue({ query, execute, close: discoveryClose });
+    for (const [role, username] of [["inspection", "inspect"], ["migration", "migrate"], ["diagnostic", "diagnose"]] as const) {
+      const result = await service.checkServerConnection(dev.serverConnectionId, role);
+      expect(result).toEqual({ status: "verified" });
+      const config = connectServer.mock.calls.at(-1)![0];
+      expect(config.credentials.username).toBe(username);
+      expect(config).not.toHaveProperty("database");
+    }
+    expect(query.mock.calls).toEqual([["SELECT 1"], ["SELECT 1"], ["SELECT 1"]]);
+    expect(discoveryClose).toHaveBeenCalledTimes(3);
+    expect(execute).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+  });
+  it("closes a failed check and withholds driver errors; invalid IDs/roles cannot open a connection", async () => {
+    const { service, profile, connectServer, discoveryClose } = await setup();
+    const dev = await profile();
+    connectServer.mockResolvedValue({ query: vi.fn().mockRejectedValue(new Error("private password and SQL")), execute: vi.fn(), close: discoveryClose });
+    const result = await service.checkServerConnection(dev.serverConnectionId, "inspection");
+    expect(result.status).toBe("failed");
+    expect(JSON.stringify(result)).not.toMatch(/private password|SQL/);
+    expect(discoveryClose).toHaveBeenCalledOnce();
+    connectServer.mockClear();
+    await expect(service.checkServerConnection("", "inspection")).rejects.toThrow("Invalid");
+    await expect(service.checkServerConnection(dev.serverConnectionId, "other" as "inspection")).rejects.toThrow("Invalid");
+    expect((await service.checkServerConnection("missing", "inspection")).status).toBe("failed");
+    expect(connectServer).not.toHaveBeenCalled();
+  });
   it("discovers with shared inspection credentials, excludes system schemas and assigns a selected batch", async () => {
     const { service, profile, connectServer, discoveryClose, writes } = await setup();
     const dev = await profile();

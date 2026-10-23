@@ -13,6 +13,8 @@ export interface RehearsalResult {
   migrationIds: string[];
 }
 export interface DatabaseOverview {
+  mcpAccess?: { profileId: string; policy: McpDataPolicy }[];
+  mcpAccessError?: string;
   submissionErrors?: { proposalId: string; message: string }[];
   profiles: DatabaseProfile[];
   servers: DatabaseServer[];
@@ -31,6 +33,8 @@ export interface DatabasePlanInput {
 export interface DevDataPolicy {
   tables: Record<string, string[]>;
 }
+export type McpDataPolicy = DevDataPolicy | { mode: "all" };
+export type DatabaseMcpAccessInput = { profileId: string; enabled: false } | { profileId: string; enabled: true; policy: McpDataPolicy };
 export interface DatabaseDiagnosticSetup {
   profileId: string;
   policy: DevDataPolicy;
@@ -42,6 +46,8 @@ export interface DatabaseTargetVerification {
   message?: string;
 }
 export interface DatabaseDesktopApi {
+  setMcpReadAccess(input: DatabaseMcpAccessInput): Promise<void>;
+  checkServerConnection(serverConnectionId: string, role: DatabaseCredentialRole): Promise<{ status: "verified" | "failed"; message?: string }>;
   verifyTargets(profileIds: string[]): Promise<DatabaseTargetVerification[]>;
   overview(): Promise<DatabaseOverview>;
   saveServerConnection(server: DatabaseServerInput): Promise<DatabaseServer>;

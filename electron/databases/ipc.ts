@@ -40,7 +40,7 @@ export async function invalidateDatabaseSourcePlans(): Promise<void> { service?.
 export async function withDatabaseRootChange<T>(directory: string, operation: () => T | Promise<T>): Promise<T> { return getDatabaseService(directory).serializeRootChange(operation); }
 
 export function registerDatabaseIpc(directory: string): void {
-  const methods: (keyof DatabaseDesktopApi)[] = ["overview", "verifyTargets", "saveServerConnection", "getServerConnection", "saveServerCredentials", "discoverDatabases", "assignDatabases", "saveProfile", "saveCredentials", "inspect", "acceptIdentity", "compare", "importProposal", "sealRelease", "history", "createPlan", "runPlan", "rehearse", "exportLibrary", "importLibrary", "configureDiagnostics", "recordRestoreVerification"];
+  const methods: (keyof DatabaseDesktopApi)[] = ["overview", "verifyTargets", "checkServerConnection", "setMcpReadAccess", "saveServerConnection", "getServerConnection", "saveServerCredentials", "discoverDatabases", "assignDatabases", "saveProfile", "saveCredentials", "inspect", "acceptIdentity", "compare", "importProposal", "sealRelease", "history", "createPlan", "runPlan", "rehearse", "exportLibrary", "importLibrary", "configureDiagnostics", "recordRestoreVerification"];
   for (const method of methods) {
     ipcMain.handle(`db:${method}`, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
       if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) throw new Error("Database operations require Repo Radar's main application view.");

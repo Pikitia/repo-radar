@@ -9,6 +9,8 @@ describe("database preload boundary", () => {
     const api = electron.exposeInMainWorld.mock.calls[0][1] as RepoRadarApi;
     await api.databases.verifyTargets(["dev", "prod"]);
     expect(electron.invoke).toHaveBeenCalledWith("db:verifyTargets", ["dev", "prod"]);
+    await api.databases.checkServerConnection("server", "migration");
+    expect(electron.invoke).toHaveBeenCalledWith("db:checkServerConnection", "server", "migration");
     await api.getDatabaseMcpStatus();
     expect(electron.invoke).toHaveBeenCalledWith("database-mcp:status");
     await api.copyDatabaseMcpConfig();

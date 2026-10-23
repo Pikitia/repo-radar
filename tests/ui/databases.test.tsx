@@ -17,6 +17,8 @@ const overview: DatabaseOverview = { servers: [server], profiles: [dev, producti
 let api: DatabaseDesktopApi;
 beforeEach(() => {
   api = {
+    setMcpReadAccess: vi.fn(),
+    checkServerConnection: vi.fn().mockResolvedValue({ status: "verified" }),
     verifyTargets: vi.fn().mockImplementation(async ids => ids.map((profileId: string) => ({ profileId, status: "verified" }))), overview: vi.fn().mockResolvedValue(overview), saveServerConnection: vi.fn().mockResolvedValue(server), getServerConnection: vi.fn().mockResolvedValue(serverDetails), saveServerCredentials: vi.fn().mockResolvedValue(undefined), discoverDatabases: vi.fn().mockResolvedValue({ serverConnectionId: server.id, databases: [] }), assignDatabases: vi.fn().mockResolvedValue([]), saveProfile: vi.fn().mockResolvedValue(dev), saveCredentials: vi.fn().mockResolvedValue(undefined), inspect: vi.fn(), acceptIdentity: vi.fn(), compare: vi.fn(), importProposal: vi.fn(), sealRelease: vi.fn(), history: vi.fn().mockResolvedValue({ enrolled: false, digest: "history", events: [] }),
     createPlan: vi.fn().mockResolvedValue({ planId: "plan", targetId: "dev", environment: "dev", releaseDigest: "release-digest", migrationIds: [], direction: "up", kind: "enroll", historyDigest: "history-digest", beforeSchemaDigest: "schema-digest", expiresAt: new Date(Date.now() + 60_000).toISOString(), recoveryEvidenceIds: [], statementCount: 2 }),
     runPlan: vi.fn().mockResolvedValue({ planId: "plan", state: "succeeded", attemptIds: [] }), rehearse: vi.fn(), exportLibrary: vi.fn(), importLibrary: vi.fn(), configureDiagnostics: vi.fn().mockResolvedValue({ instructions: "Start the isolated dev MCP entry point" }), recordRestoreVerification: vi.fn().mockResolvedValue({ evidenceIds: [] })
@@ -154,6 +156,8 @@ describe("Database view", () => {
   it("writes credentials once, clears the password and prevents production diagnostics", async () => {
     render(<DatabaseSettings mcpEnabled onMcpEnabledChange={vi.fn()} />);
     await screen.findByRole("heading", { name: "Server connections" });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit connection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Read-only inspection credentials" }));
     await waitFor(() => expect(screen.getByLabelText("Username")).toHaveValue("reader"));
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "local-reader" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-not-returned" } });
@@ -162,13 +166,16 @@ describe("Database view", () => {
     expect(screen.getByLabelText("Password")).toHaveValue("");
     expect(screen.queryByText("secret-not-returned")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Save credentials" })).toBeEnabled());
-    fireEvent.change(screen.getByLabelText("Database target"), { target: { value: "prod" } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Catalog production" }));
+    fireEvent.click(screen.getByText("Development MCP access"));
     expect(screen.getByRole("button", { name: "Configure dev-only MCP" })).toBeDisabled();
     expect(api.configureDiagnostics).not.toHaveBeenCalled();
   });
   it("loads saved server and target fields for editing and saves them independently", async () => {
     render(<DatabaseSettings mcpEnabled onMcpEnabledChange={vi.fn()} />);
     await screen.findByRole("heading", { name: "Server connections" });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit connection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Catalog development" }));
     await waitFor(() => expect(screen.getByLabelText("Host")).toHaveValue("databases.invalid"));
     expect(screen.getByLabelText("Port")).toHaveValue(3306);
     expect(screen.getByLabelText("Server label")).toHaveValue(server.label);
@@ -181,17 +188,19 @@ describe("Database view", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save server connection" }));
     await waitFor(() => expect(api.saveServerConnection).toHaveBeenCalledWith({ id: server.id, label: server.label, host: "replacement.invalid", port: 3306, tlsMode: "disabled", tlsCa: undefined }));
     expect(api.saveProfile).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Save protected target" })).toBeEnabled());
-    fireEvent.change(screen.getByLabelText("Database target"), { target: { value: "prod" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save database target" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Edit Catalog production" }));
     expect(screen.getByLabelText("Database name")).toHaveValue("catalog_prod");
     expect(screen.getByLabelText("Environment")).toHaveValue("production");
     fireEvent.change(screen.getByLabelText("Target label"), { target: { value: "Live catalog" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save protected target" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save database target" }));
     await waitFor(() => expect(api.saveProfile).toHaveBeenCalledWith({ id: "prod", serverConnectionId: server.id, database: "catalog_prod", databaseKey: "catalog", label: "Live catalog", environment: "production" }));
   });
   it("keeps saved passwords write-only and omits an unchanged password on save", async () => {
     render(<DatabaseSettings mcpEnabled onMcpEnabledChange={vi.fn()} />);
     await screen.findByRole("heading", { name: "Server connections" });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit connection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Read-only inspection credentials" }));
     await waitFor(() => expect(screen.getByLabelText("Username")).toHaveValue("reader"));
     expect(screen.getByLabelText("Password")).toHaveValue("");
     expect(screen.getByLabelText("Password")).toHaveAttribute("placeholder", "Leave blank to keep saved password");
@@ -204,8 +213,7 @@ describe("Database view", () => {
   it("defaults new server connections to TLS off and allows verified TLS without a custom authority", async () => {
     render(<DatabaseSettings mcpEnabled onMcpEnabledChange={vi.fn()} />);
     await screen.findByRole("heading", { name: "Server connections" });
-    await waitFor(() => expect(screen.getByLabelText("Host")).toHaveValue(server.host));
-    fireEvent.click(screen.getByRole("button", { name: "New server connection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add server connection" }));
     expect(screen.getByLabelText("TLS")).toHaveValue("disabled");
     expect(screen.getByLabelText("Host")).toHaveValue("");
     fireEvent.change(screen.getByLabelText("Server label"), { target: { value: "Future TLS server" } });
@@ -224,9 +232,9 @@ describe("Database view", () => {
     vi.mocked(api.assignDatabases).mockResolvedValue([{ ...dev, id: "orders", databaseKey: "orders", label: "Orders development", database: "orders_dev" }]);
     render(<DatabaseSettings mcpEnabled onMcpEnabledChange={vi.fn()} />);
     await screen.findByRole("heading", { name: "Server connections" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Discover available databases" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Discover available databases" }));
-    await screen.findByText("Already assigned to a target");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rescan databases" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Rescan databases" }));
+    await screen.findByLabelText("Assign orders_dev");
     expect(screen.queryByLabelText("Assign catalog_dev")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select all unassigned" }));
     expect(screen.getByLabelText("Assign orders_dev")).toBeChecked();
