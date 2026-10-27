@@ -126,7 +126,7 @@ describe("MCP development-only enforcement", () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
       await server.connect(serverTransport); await client.connect(clientTransport);
-      expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(["list_dev_databases", "get_dev_schema", "query_dev_data", "submit_migration", "get_submission_status"]);
+      expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(["list_databases", "get_database_schema", "query_database", "submit_migration", "get_submission_status"]);
       const allowed = await client.callTool({ name: "list_dev_databases", arguments: {} });
       expect(JSON.stringify(allowed)).toContain("shared");
       const denied = await client.callTool({ name: "query_dev_data", arguments: { databaseKey: "shared", table: "stock", columns: ["id"], sql: "DROP DATABASE production" } });

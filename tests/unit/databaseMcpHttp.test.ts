@@ -35,7 +35,7 @@ describe("desktop loopback MCP lifecycle", () => {
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(value.connectionDetails().url), { requestInit: { headers: headers(value) } }));
       const listed = await client.listTools();
-      expect(listed.tools.map(tool => tool.name).sort()).toEqual(["get_dev_schema", "get_submission_status", "list_dev_databases", "query_dev_data", "submit_migration"].sort());
+      expect(listed.tools.map(tool => tool.name).sort()).toEqual(["get_database_schema", "get_submission_status", "list_databases", "query_database", "submit_migration"].sort());
       const denied = await client.callTool({ name: "list_dev_databases", arguments: {} });
       expect(denied.isError).toBe(true);
       expect(JSON.stringify(denied)).not.toContain(value.connectionDetails().token);

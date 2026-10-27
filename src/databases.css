@@ -96,7 +96,7 @@
 .database-server-panel .database-discovery-table td { overflow-wrap: anywhere; }
 .database-server-panel .database-discovery-table .database-status-ok { white-space: nowrap; }
 .database-mcp-settings { margin-top: 24px; border-top: 1px solid #344053; padding-top: 10px; }
-.database-editor-dialog { width: min(980px, calc(100vw - 80px)); height: auto; max-height: calc(100vh - 80px); padding: 0; border: 1px solid #52647b; border-radius: 8px; background: #1d2025; color: var(--text, #e8ecf4); overflow: auto; box-shadow: 0 16px 60px #0009; }
+.database-editor-dialog { width: min(980px, calc(100vw - 80px)); height: fit-content; max-height: calc(100vh - 80px); padding: 0; border: 1px solid #52647b; border-radius: 8px; background: #1d2025; color: var(--text, #e8ecf4); overflow: auto; box-shadow: 0 16px 60px #0009; }
 .database-editor-dialog::backdrop { background: #0009; }
 .database-editor-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 18px; border-bottom: 1px solid #344053; position: sticky; top: 0; background: #1d2025; z-index: 1; }
 .database-editor-dialog > header h2 { margin: 0; font-size: 19px; }

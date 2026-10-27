@@ -20,7 +20,7 @@ export function DatabaseEditorDialog({ title, closeLabel, busy, error, notice, p
     element.showModal();
     return () => { element.close(); if (previous?.isConnected) previous.focus(); };
   }, []);
-  return <dialog ref={dialog} className="database-editor-dialog database-workspace" aria-label={title} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
+  return <dialog ref={dialog} className="database-editor-dialog database-workspace" aria-label={title} onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!busy) onClose(); }}>
     <header><h2>{title}</h2><button type="button" disabled={busy} onClick={onClose}>{closeLabel}</button></header>
     <div className="database-editor-body">
       {error && <p role="alert" className="issue-box">{error}</p>}{notice && <p role="status">{notice}</p>}{progress && <p role="status">{progress}…</p>}

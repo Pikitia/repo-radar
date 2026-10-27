@@ -159,17 +159,16 @@ function ServerPanel({ api, overview, serverId, selectedProfile, verification, b
               finally { setCheckingRole(null); }
             })}>Check</button></div></td></tr>)}
       </tbody></table></div>
-      {role && <form aria-label="Edit credentials" className="database-form" onSubmit={event => { event.preventDefault(); const secret = password; setPassword(""); void perform("Saving protected credentials", async () => {
+      {role && <DatabaseEditorDialog title={`Edit ${roles.find(item => item.role === role)?.label} credentials`} closeLabel="Close credential setup" busy={busy} error={error} notice={notice} progress={progress} onClose={() => { setRole(null); setPassword(""); }}><form aria-label="Edit credentials" className="database-form" onSubmit={event => { event.preventDefault(); const secret = password; setPassword(""); void perform("Saving protected credentials", async () => {
         const savedUsername = details?.credentialUsernames[role];
         await api.saveServerCredentials(serverId, role, { username, ...(secret || !savedUsername ? { password: secret } : {}) });
         invalidate(); const next = await api.getServerConnection(serverId); setDetails(next); setUsername(next.credentialUsernames[role] ?? ""); notify("Credentials saved.");
         if (role === "inspection") await verify(profiles.map(item => item.id));
       }); }}>
-        <strong className="database-wide">{roles.find(item => item.role === role)?.label}</strong>
         <label>Username<input required disabled={unavailable} autoComplete="off" value={username} onChange={event => setUsername(event.target.value)} /></label>
         <label>Password<input type="password" required={!!details?.credentialUsernames[role] && username !== details.credentialUsernames[role]} disabled={unavailable} autoComplete="new-password" placeholder={details?.credentialUsernames[role] ? "Leave blank to keep saved password" : "Password"} value={password} onChange={event => setPassword(event.target.value)} /></label>
         <button disabled={unavailable || connectionChanged}>Save credentials</button><button type="button" disabled={unavailable} onClick={() => { setRole(null); setPassword(""); }}>Cancel credential edit</button>
-      </form>}
+      </form></DatabaseEditorDialog>}
       <p className="muted">Passwords are never shown. Check tests sign-in only. MCP uses its own read-only account and can read only databases you enable in the grid.</p>
     </DatabaseEditorDialog>}
     {serverId && <>
@@ -190,10 +189,10 @@ function ServerPanel({ api, overview, serverId, selectedProfile, verification, b
             <th scope="row">{item.database}</th><td>{item.label}<small className="database-cell-secondary">{item.databaseKey}</small></td><td>{item.environment}</td>
             <td><Tick yes={result?.status !== "failed" && (!!item.identity || result?.status === "verified")} label={result?.status === "failed" ? "Needs check" : item.identity || result?.status === "verified" ? "Identified" : "Not identified"} /></td>
             <td aria-live="polite">{checkingIds.includes(item.id) ? "Checking…" : <Tick yes={result?.status === "verified"} label={result ? result.status === "verified" ? "Available" : "Check failed" : "Not checked"} />}{result?.message && <small className="database-cell-secondary issue-box">{result.message}</small>}</td>
-            <td><label className="database-check"><input type="checkbox" aria-label={`MCP read access for ${item.label}`} checked={mcpEnabled} disabled={unavailable || connectionChanged || !mcpEnabled && (!savedServer?.hasDiagnosticCredentials || !savedServer.hasInspectionCredentials)} onChange={event => {
+            <td><div className="database-row-actions"><label className="database-check"><input type="checkbox" aria-label={`MCP read access for ${item.label}`} checked={mcpEnabled} disabled={unavailable || connectionChanged || !mcpEnabled && (!savedServer?.hasDiagnosticCredentials || !savedServer.hasInspectionCredentials)} onChange={event => {
               if (event.target.checked) editMcpAccess(item);
               else void perform("Disabling MCP read access", async () => { await api.setMcpReadAccess({ profileId: item.id, enabled: false }); onConfigurationChange(); notify(`MCP read access disabled for ${item.label}.`); });
-            }} />{mcpEnabled ? "Enabled" : "Off"}</label>{mcpEnabled && <button disabled={unavailable} aria-label={`Edit MCP access for ${item.label}`} onClick={() => editMcpAccess(item)}>Scope</button>}</td>
+            }} /></label>{mcpEnabled && <button disabled={unavailable} aria-label={`Edit MCP access for ${item.label}`} onClick={() => editMcpAccess(item)}>Scope</button>}</div></td>
             <td><div className="database-row-actions"><button disabled={unavailable} aria-label={`Edit ${item.label}`} onClick={() => { setProfile(profileInput(item)); onSelectTarget(item); }}>Edit</button><button disabled={unavailable || connectionChanged} aria-label={`Check ${item.label}`} onClick={() => void perform("Checking database", () => verify([item.id]))}>Check</button>
               {result?.status === "failed" && <button disabled={unavailable} onClick={() => onReviewIdentity(item)}>Review identity for {item.label}</button>}
             </div></td>

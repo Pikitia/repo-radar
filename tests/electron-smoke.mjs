@@ -205,10 +205,13 @@ try {
   await databaseSettings.getByRole("button", { name: "Edit Read-only inspection credentials", exact: true }).click();
   assert.equal(await databaseSettings.getByLabel("Username", { exact: true }).inputValue(), "smoke-fixture-reader");
   assert.equal(await databaseSettings.getByLabel("Password", { exact: true }).inputValue(), "");
+  await databaseSettings.getByRole("button", { name: "Close credential setup", exact: true }).click();
+  await databaseSettings.getByRole("button", { name: "Close connection setup", exact: true }).click();
   await databaseSettings.getByRole("button", { name: "Edit Disposable smoke profile", exact: true }).click();
   assert.equal(await databaseSettings.getByLabel("Database name", { exact: true }).inputValue(), "smoke_fixture");
-  await databaseSettings.getByText("Development MCP access", { exact: true }).click();
-  await databaseSettings.getByRole("checkbox", { name: "Start the development MCP server automatically", exact: true }).waitFor();
+  await databaseSettings.getByRole("button", { name: "Close database setup", exact: true }).click();
+  await databaseSettings.getByText("MCP server", { exact: true }).click();
+  await databaseSettings.getByRole("checkbox", { name: "Start the database MCP server automatically", exact: true }).waitFor();
   await window.screenshot({ path: "test-results/databases-connections.png" });
   await settingsDialog.getByRole("button", { name: "Close", exact: true }).click();
   // Comparison presentation uses deterministic IPC fixtures, never a live database.

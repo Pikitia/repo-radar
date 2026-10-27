@@ -8,7 +8,7 @@ The app is for repeated operational use, not for a marketing-style presentation.
 
 ## Main Layout
 
-The workspace has Repositories, CI Watch and Databases tabs. The [Databases workflow](databases.md) defines reusable protected server connections with optional verified TLS, editable database targets, accessible-schema discovery and bulk assignment, service-owned migration proposals, ordered execution/recovery, structural comparison and the restricted dev MCP process. Git and CI actions do not automatically execute migrations.
+The workspace has Repositories, CI Watch and Databases tabs. The [Databases workflow](databases.md) defines reusable protected server connections with optional verified TLS, modal target/connection editing, accessible-schema discovery and bulk assignment, service-owned migration proposals, ordered execution/recovery, structural comparison and explicit per-database MCP read access across servers and environments. Git and CI actions do not automatically execute migrations.
 
 Use a two-panel desktop layout:
 

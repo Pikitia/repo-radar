@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseConnectionConfig, DatabaseEnvironment } from "../../src/types/database.js";
 import { DatabaseService } from "../../electron/databases/service.js";
 import { DatabaseDiagnosticBroker } from "../../electron/databases/mcp.js";
-import { loadMcpReadConfig, saveMcpReadConfig } from "../../electron/databases/devConfig.js";
+import { loadMcpReadConfig, saveMcpReadConfig, saveDiagnosticConfig } from "../../electron/databases/devConfig.js";
 
 const directories: string[] = [];
 const protector = { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value).reverse(), decryptString: (value: Buffer) => Buffer.from(value).reverse().toString() };
@@ -43,6 +43,30 @@ async function fixture() {
 }
 
 describe("explicit MCP target collection", () => {
+  it("upgrades legacy development enrollment while preserving its policy when another target is enabled", async () => {
+    const { service, target, directory } = await fixture();
+    const dev = await target("dev", "first.invalid", "development");
+    const prod = await target("production", "second.invalid", "production");
+    await service.setMcpReadAccess({ profileId: dev.id, enabled: true, policy: { mode: "all" } });
+    const enrolled = (await loadMcpReadConfig(directory, protector)).targets[0];
+    await saveDiagnosticConfig(directory, protector, { profile: enrolled.profile, policy: { tables: { stock: ["id"] } }, deniedIdentities: [], workspaceRoot: directory, repositories: [] });
+    await service.setMcpReadAccess({ profileId: prod.id, enabled: true, policy: { mode: "all" } });
+    const updated = await loadMcpReadConfig(directory, protector);
+    expect(updated.legacy).toBe(false);
+    expect(updated.targets.map(item => item.profile.profileId)).toEqual([dev.id, prod.id]);
+    expect(updated.targets[0].policy).toEqual({ tables: { stock: ["id"] } });
+  });
+  it("never routes a legacy development-only alias to an enabled production target", async () => {
+    const { service, broker, target, connect } = await fixture();
+    const prod = await target("production", "first.invalid", "production");
+    await service.setMcpReadAccess({ profileId: prod.id, enabled: true, policy: { mode: "all" } });
+    connect.mockClear();
+    await expect(broker.call("query_dev_data", { databaseKey: prod.databaseKey, table: "stock", columns: ["id"] })).rejects.toThrow("not enrolled");
+    expect(connect).not.toHaveBeenCalled();
+    expect(await broker.call("list_dev_databases", {})).toEqual({ databases: [] });
+    await expect(broker.call("query_database", { databaseKey: prod.databaseKey, table: "stock", columns: ["id"] })).rejects.toThrow();
+    expect(connect).not.toHaveBeenCalled();
+  });
   it("reads explicitly enabled dev/production/sandbox targets across servers with the same logical key", async () => {
     const { service, broker, target, connect, execute, directory } = await fixture();
     const dev = await target("dev", "first.invalid", "development");

@@ -27,7 +27,7 @@ try {
   await Promise.race([client.connect(transport), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Dedicated MCP process did not initialize within 15 seconds.")), 15000); })]);
   clearTimeout(timer);
   const listed = await client.listTools();
-  assert.deepEqual(listed.tools.map(tool => tool.name).sort(), ["get_dev_schema", "get_submission_status", "list_dev_databases", "query_dev_data", "submit_migration"].sort());
+  assert.deepEqual(listed.tools.map(tool => tool.name).sort(), ["get_database_schema", "get_submission_status", "list_databases", "query_database", "submit_migration"].sort());
   const denied = await client.callTool({ name: "list_dev_databases", arguments: {} });
   assert.equal(denied.isError, true);
   assert.equal(JSON.stringify(denied).includes("password"), false);

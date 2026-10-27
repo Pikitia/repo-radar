@@ -27,7 +27,7 @@ export async function verifyReadOnlyDiagnosticGrants(session: SqlSession, databa
     if (!match) throw new Error("Role/proxy grants are not supported for diagnostic access.");
     const privileges = match[1].split(",").map(value => value.trim().toUpperCase());
     if (privileges.every(value => value === "USAGE") && match[2] === "*.*") continue;
-    if (!privileges.every(value => value === "SELECT" || value === "SHOW VIEW") || !allowOtherReadOnlySchemas && !match[2].startsWith(`${quote(database)}.`)) throw new Error("Diagnostic credentials have privileges beyond the enrolled development schema.");
+    if (!privileges.every(value => value === "SELECT" || value === "SHOW VIEW") || !allowOtherReadOnlySchemas && !match[2].startsWith(`${quote(database)}.`)) throw new Error("Diagnostic credentials have privileges beyond the permitted read-only scope.");
     if (privileges.includes("SELECT") && (match[2] === "*.*" || match[2].startsWith(`${quote(database)}.`))) select = true;
   }
   if (!select) throw new Error("Diagnostic SELECT privilege is required.");

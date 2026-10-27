@@ -11,6 +11,8 @@ describe("database preload boundary", () => {
     expect(electron.invoke).toHaveBeenCalledWith("db:verifyTargets", ["dev", "prod"]);
     await api.databases.checkServerConnection("server", "migration");
     expect(electron.invoke).toHaveBeenCalledWith("db:checkServerConnection", "server", "migration");
+    await api.databases.setMcpReadAccess({ profileId: "production", enabled: true, policy: { mode: "all" } });
+    expect(electron.invoke).toHaveBeenCalledWith("db:setMcpReadAccess", { profileId: "production", enabled: true, policy: { mode: "all" } });
     await api.getDatabaseMcpStatus();
     expect(electron.invoke).toHaveBeenCalledWith("database-mcp:status");
     await api.copyDatabaseMcpConfig();

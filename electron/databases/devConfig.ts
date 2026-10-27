@@ -61,6 +61,7 @@ function validateMcpConfig(value: unknown): McpReadConfig {
   const config = mcpConfig.parse(value);
   const ids = new Set<string>();
   for (const target of config.targets) {
+    if (["mysql", "sys", "information_schema", "performance_schema"].includes(target.profile.database.toLowerCase())) throw new Error("System databases cannot be enabled for MCP reads.");
     if (ids.has(target.profile.profileId) || target.profile.identity.database !== target.profile.database || target.deniedIdentities.includes(target.profile.identity.fingerprint)) throw new Error("Invalid or duplicate MCP database identity.");
     ids.add(target.profile.profileId);
     if (!("mode" in target.policy)) validatePolicy(target.policy);
@@ -127,9 +128,11 @@ export async function saveDiagnosticConfig(directory: string, protector: Databas
 }
 async function writeDiagnosticFile(directory: string, protector: DatabaseSecretProtector, config: DiagnosticConfig | McpReadConfig): Promise<void> {
   if (!protector.isEncryptionAvailable()) throw new Error("Protected diagnostic storage is unavailable.");
+  const serialized = JSON.stringify(config);
+  if (Buffer.byteLength(serialized) > 2_000_000) throw new Error("The MCP read configuration exceeds its protected storage limit.");
   await mkdir(directory, { recursive: true });
   const temporary = path.join(directory, `.diagnostics-${randomUUID()}.tmp`);
-  try { await writeFile(temporary, protector.encryptString(JSON.stringify(config)), { flag: "wx", mode: 0o600 }); await rename(temporary, path.join(directory, "diagnostics.enc")); }
+  try { await writeFile(temporary, protector.encryptString(serialized), { flag: "wx", mode: 0o600 }); await rename(temporary, path.join(directory, "diagnostics.enc")); }
   finally { await rm(temporary, { force: true }); }
 }
 

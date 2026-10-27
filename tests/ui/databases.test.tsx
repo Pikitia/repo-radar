@@ -167,8 +167,8 @@ describe("Database view", () => {
     expect(screen.queryByText("secret-not-returned")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Save credentials" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Edit Catalog production" }));
-    fireEvent.click(screen.getByText("Development MCP access"));
-    expect(screen.getByRole("button", { name: "Configure dev-only MCP" })).toBeDisabled();
+    fireEvent.click(screen.getByText("MCP server"));
+    expect(screen.getByRole("checkbox", { name: "MCP read access for Catalog production" })).toBeDisabled();
     expect(api.configureDiagnostics).not.toHaveBeenCalled();
   });
   it("loads saved server and target fields for editing and saves them independently", async () => {

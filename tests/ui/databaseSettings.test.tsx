@@ -17,6 +17,7 @@ let api: DatabaseDesktopApi;
 let desktop: RepoRadarApi;
 beforeEach(() => {
   api = {
+    setMcpReadAccess: vi.fn().mockResolvedValue(undefined),
     overview: vi.fn().mockResolvedValue(overview), getServerConnection: vi.fn().mockResolvedValue({ ...server, credentialUsernames: { inspection: "reader" } }),
     saveProfile: vi.fn().mockImplementation(async profile => profile), saveServerConnection: vi.fn().mockResolvedValue(server), saveServerCredentials: vi.fn().mockResolvedValue(undefined),
     verifyTargets: vi.fn().mockImplementation(async ids => ids.map((profileId: string) => ({ profileId, status: "verified" }))),
@@ -37,6 +38,59 @@ async function clickReady(name: string) {
 }
 
 describe("Independent database settings", () => {
+  it("opens credential editing in its own dialog above the connection editor", async () => {
+    render(panel());
+    await clickReady("Edit connection");
+    await clickReady("Edit Read-only inspection credentials");
+    const dialog = screen.getByRole("dialog", { name: "Edit Read-only inspection credentials" });
+    expect(within(dialog).getByLabelText("Username")).toHaveValue("reader");
+    fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: "unsaved-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close credential setup" }));
+    expect(dialog).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Edit server connection" })).toBeInTheDocument();
+    await clickReady("Edit Read-only inspection credentials");
+    expect(screen.getByLabelText("Password")).toHaveValue("");
+    fireEvent(screen.getByRole("dialog", { name: "Edit Read-only inspection credentials" }), new Event("cancel", { bubbles: true, cancelable: true }));
+    expect(screen.getByRole("dialog", { name: "Edit server connection" })).toBeInTheDocument();
+    expect(api.saveServerCredentials).not.toHaveBeenCalled();
+  });
+  it("enables production MCP access from its row with an explicit scope and revokes it by unchecking", async () => {
+    let nextOverview: DatabaseOverview = { ...overview, servers: [{ ...server, hasDiagnosticCredentials: true }] };
+    vi.mocked(api.overview).mockImplementation(async () => nextOverview);
+    vi.mocked(api.setMcpReadAccess).mockImplementation(async input => {
+      nextOverview = { ...nextOverview, mcpAccess: input.enabled ? [{ profileId: input.profileId, policy: input.policy }] : [] };
+    });
+    render(panel());
+    const checkbox = await screen.findByRole("checkbox", { name: "MCP read access for Orders live" });
+    await waitFor(() => expect(checkbox).toBeEnabled());
+    fireEvent.click(checkbox);
+    const dialog = screen.getByRole("dialog", { name: "MCP read access · Orders live" });
+    expect(within(dialog).getByRole("button", { name: "Enable MCP read access" })).toBeDisabled();
+    expect(api.setMcpReadAccess).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByLabelText("All ordinary tables and columns"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Enable MCP read access" }));
+    await waitFor(() => expect(checkbox).toBeChecked());
+    expect(api.setMcpReadAccess).toHaveBeenCalledWith({ profileId: prod.id, enabled: true, policy: { mode: "all" } });
+    await waitFor(() => expect(checkbox).toBeEnabled());
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(api.setMcpReadAccess).toHaveBeenLastCalledWith({ profileId: prod.id, enabled: false }));
+    await waitFor(() => expect(checkbox).not.toBeChecked());
+    expect(screen.queryByRole("dialog", { name: "MCP read access · Orders live" })).not.toBeInTheDocument();
+  });
+  it("shows an in-progress database check and replaces a previous success with its timeout reason", async () => {
+    render(panel());
+    await clickReady("Check Catalog dev");
+    const row = screen.getByRole("row", { name: /catalog_dev/ });
+    await waitFor(() => expect(row).toHaveTextContent("✓ Available"));
+    let finish!: (value: Awaited<ReturnType<DatabaseDesktopApi["verifyTargets"]>>) => void;
+    vi.mocked(api.verifyTargets).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    await clickReady("Check Catalog dev");
+    expect(row).toHaveTextContent("Checking…");
+    expect(row).not.toHaveTextContent("✓ Available");
+    await act(async () => { finish([{ profileId: dev.id, status: "failed", message: "Database connection timed out. Check VPN access." }]); });
+    expect(row).toHaveTextContent("Database connection timed out");
+    expect(row).not.toHaveTextContent("✓ Available");
+  });
   it("opens server and database editing in dialogs and closes them without saving drafts", async () => {
     render(panel());
     await clickReady("Edit connection");
@@ -102,7 +156,7 @@ describe("Independent database settings", () => {
     expect(screen.queryByRole("form", { name: "Server connection settings" })).not.toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "Server credentials" })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Connection verification results" })).not.toBeInTheDocument();
-    expect(screen.getByText("Development MCP access").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("MCP server").closest("details")).not.toHaveAttribute("open");
     await clickReady("Check Catalog dev");
     await waitFor(() => expect(within(grid).getByRole("row", { name: /catalog_dev/ })).toHaveTextContent("✓ Available"));
     expect(api.verifyTargets).toHaveBeenCalledWith([dev.id]);
@@ -114,7 +168,7 @@ describe("Independent database settings", () => {
     await clickReady("Edit connection");
     const grid = screen.getByRole("table", { name: "Server credentials" });
     expect(within(grid).getAllByText("✓ Set up")).toHaveLength(3);
-    for (const [role, label] of [["inspection", "Read-only inspection"], ["migration", "Migration execution"], ["diagnostic", "Development diagnostics"]] as const) {
+    for (const [role, label] of [["inspection", "Read-only inspection"], ["migration", "Migration execution"], ["diagnostic", "MCP read access"]] as const) {
       const button = within(grid).getByRole("button", { name: `Check ${label} connection` });
       await waitFor(() => expect(button).toBeEnabled());
       fireEvent.click(button);
@@ -222,7 +276,7 @@ describe("Independent database settings", () => {
   });
   it("shows server status and copies configuration through main without receiving a token", async () => {
     render(panel());
-    fireEvent.click(screen.getByText("Development MCP access"));
+    fireEvent.click(screen.getByText("MCP server"));
     expect(await screen.findByText(/MCP server running/)).toHaveTextContent("http://127.0.0.1:47321/mcp");
     fireEvent.click(screen.getByRole("button", { name: "Copy MCP configuration" }));
     await waitFor(() => expect(desktop.copyDatabaseMcpConfig).toHaveBeenCalledOnce());
@@ -233,14 +287,14 @@ describe("Independent database settings", () => {
     render(<SettingsDialog open onClose={vi.fn()} onSaved={onSaved} />);
     fireEvent.change(await screen.findByLabelText("Refresh interval minutes"), { target: { value: "17" } });
     fireEvent.click(screen.getByRole("tab", { name: "Databases" }));
-    fireEvent.click(screen.getByText("Development MCP access"));
-    const toggle = screen.getByLabelText("Start the development MCP server automatically");
+    fireEvent.click(screen.getByText("MCP server"));
+    const toggle = screen.getByLabelText("Start the database MCP server automatically");
     expect(toggle).toBeChecked();
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByLabelText("Refresh interval minutes")).toHaveValue(17);
     fireEvent.click(screen.getByRole("tab", { name: "Databases" }));
-    expect(screen.getByLabelText("Start the development MCP server automatically")).not.toBeChecked();
+    expect(screen.getByLabelText("Start the database MCP server automatically")).not.toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Save Settings" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ refreshIntervalMinutes: 17, databaseMcpEnabled: false })));
   });
