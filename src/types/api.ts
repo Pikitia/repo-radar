@@ -55,6 +55,8 @@ export type NpmCommandEvent =
 export type RepoRadarApi = {
   databases: DatabaseDesktopApi;
   getSettings(): Promise<AppSettings>;
+  canUpdateInstalledApp(): Promise<boolean>;
+  updateInstalledApp(): Promise<boolean>;
   getDatabaseMcpStatus(): Promise<DatabaseMcpStatus>;
   copyDatabaseMcpConfig(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;

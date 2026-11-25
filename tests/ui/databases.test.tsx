@@ -113,7 +113,7 @@ describe("Database view", () => {
   });
   it("links the main Databases tab and keeps Git and CI usable after a database failure", async () => {
     vi.mocked(api.overview).mockRejectedValue(new Error("Database setup failed"));
-    window.repoRadar = { databases: api, getSettings: vi.fn().mockResolvedValue({ ...defaultSettings, rootFolder: "C:/fixtures", refreshIntervalMinutes: 0 }), discoverRepositories: vi.fn().mockResolvedValue([]), onNpmCommandEvent: vi.fn().mockReturnValue(() => undefined) } as unknown as RepoRadarApi;
+    window.repoRadar = { databases: api, getSettings: vi.fn().mockResolvedValue({ ...defaultSettings, rootFolder: "C:/fixtures", refreshIntervalMinutes: 0 }), canUpdateInstalledApp: vi.fn().mockResolvedValue(false), discoverRepositories: vi.fn().mockResolvedValue([]), onNpmCommandEvent: vi.fn().mockReturnValue(() => undefined) } as unknown as RepoRadarApi;
     render(<App />);
     const tab = screen.getByRole("tab", { name: "Databases" });
     expect(tab).toHaveAttribute("aria-controls", "databases-view");

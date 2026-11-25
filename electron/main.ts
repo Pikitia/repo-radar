@@ -3,7 +3,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import type { DiffMode, RepoStatus, SyncCommitGuard, SyncDecision } from "../src/types/repo.js";
 import type { NpmCommandEvent, NpmScriptCommand, ScanOptions } from "../src/types/api.js";
@@ -25,9 +25,14 @@ import { registerDatabaseIpc, databaseOperationActive, withDatabaseRootChange } 
 import { databaseStorageDirectory, preserveLegacyDatabaseStorage } from "./databases/storagePaths.js";
 import { LocalDatabaseMcpServer } from "./databases/mcpHttp.js";
 import type { DevelopPullRequestPreview } from "../src/types/api.js";
+import { readOmarchyInstall, rebuildOmarchyInstall } from "./installedUpdate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
+const indexPath = path.join(app.getAppPath(), "dist", "index.html");
+const omarchyInstall = app.isPackaged && process.platform === "linux" ? readOmarchyInstall(process.resourcesPath) : undefined;
+let updatingInstalledApp = false;
+// Hyprland is not auto-detected by Electron's credential storage selection.
+if (omarchyInstall) app.commandLine.appendSwitch("password-store", "gnome-libsecret");
 const runningNpmCommands = new Map<string, ChildProcess>();
 const databaseMcpMode = process.argv.includes("--database-mcp");
 let localDatabaseMcp: LocalDatabaseMcpServer | undefined;
@@ -52,7 +57,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 640,
     title: "Repo Radar",
-    icon: path.join(app.getAppPath(), "assets", "icon.ico"),
+    ...(process.platform === "win32" ? { icon: path.join(app.getAppPath(), "assets", "icon.ico") } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -67,10 +72,10 @@ function createWindow() {
     }
   });
 
-  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+  if (!app.isPackaged && process.env.VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    void mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+    void mainWindow.loadFile(indexPath);
   }
 }
 
@@ -134,7 +139,9 @@ async function openTerminal(repoPath: string): Promise<void> {
         { command: "cmd.exe", args: ["/K"] },
         { command: "powershell.exe", args: ["-NoExit", "-Command", "Set-Location -LiteralPath $args[0]", targetPath] }
       ]
-    : [
+    : process.platform === "linux" ? [
+        { command: "xdg-terminal-exec", args: [`--dir=${targetPath}`] }
+      ] : [
         { command: process.env.SHELL ?? "sh", args: [] }
       ];
 
@@ -359,6 +366,24 @@ async function discoverRepoShells(root: string, includeNestedRepositories: boole
 
 function registerIpc() {
   ipcMain.handle("settings:get", () => getSettings());
+  ipcMain.handle("installed-app:can-update", () => Boolean(omarchyInstall));
+  ipcMain.handle("installed-app:update", async event => {
+    if (!omarchyInstall || !BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame || event.senderFrame?.url !== pathToFileURL(indexPath).href) {
+      throw new Error("Updates are available from the installed Repo Radar application.");
+    }
+    if (updatingInstalledApp) throw new Error("Repo Radar is already updating.");
+    if (databaseOperationActive() || runningNpmCommands.size) throw new Error("Wait for the current database or npm operation to finish before updating.");
+    updatingInstalledApp = true;
+    try {
+      await rebuildOmarchyInstall(omarchyInstall, app.getPath("userData"));
+      if (databaseOperationActive() || runningNpmCommands.size) return false;
+      app.relaunch({ execPath: omarchyInstall.launcher, args: [] });
+      app.quit();
+      return true;
+    } finally {
+      updatingInstalledApp = false;
+    }
+  });
   const requireMainView = (event: IpcMainInvokeEvent) => {
     if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) throw new Error("MCP settings require Repo Radar's main application view.");
   };
