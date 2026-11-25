@@ -35,6 +35,8 @@ const api: RepoRadarApi = {
     recordRestoreVerification: (profileId, sandboxId) => invoke("db:recordRestoreVerification", profileId, sandboxId),
   },
   getSettings: () => invoke("settings:get"),
+  canUpdateInstalledApp: () => invoke("installed-app:can-update"),
+  updateInstalledApp: () => invoke("installed-app:update"),
   getDatabaseMcpStatus: () => invoke("database-mcp:status"),
   copyDatabaseMcpConfig: () => invoke("database-mcp:copyConfig"),
   updateSettings: (settings: Partial<AppSettings>) => invoke("settings:update", settings),

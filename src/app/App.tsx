@@ -33,6 +33,8 @@ export function App() {
   const [databaseConfigurationVersion, setDatabaseConfigurationVersion] = useState(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [canUpdateInstalledApp, setCanUpdateInstalledApp] = useState(false);
+  const [updatingInstalledApp, setUpdatingInstalledApp] = useState(false);
   const [watchMainBusy, setWatchMainBusy] = useState(false);
   const watchRoot = useRef(settings.rootFolder);
   watchRoot.current = settings.rootFolder;
@@ -112,6 +114,7 @@ export function App() {
       setSettings(loaded);
       if (!loaded.rootFolder) setSettingsOpen(true);
     });
+    void window.repoRadar.canUpdateInstalledApp().then(setCanUpdateInstalledApp);
   }, []);
 
   useEffect(() => {
@@ -149,6 +152,17 @@ export function App() {
     } catch (error) {
       if (watchRoot.current === startingRoot) setMessage(`Could not watch main: ${error instanceof Error ? error.message : String(error)}`);
     } finally { setWatchMainBusy(false); }
+  }
+
+  async function updateInstalledApp() {
+    setUpdatingInstalledApp(true);
+    try {
+      if (await window.repoRadar.updateInstalledApp()) return;
+      setMessage("Update installed. Finish the current operation, then close and reopen Repo Radar.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+    setUpdatingInstalledApp(false);
   }
 
   return (
@@ -209,11 +223,18 @@ export function App() {
         }}
       />
       <div className="workspace">
-        <nav className="workspace-nav" role="tablist" aria-label="Main views">
-          <button title="Inspect local repositories" id="repositories-tab" role="tab" aria-controls="repositories-view" aria-selected={view === "repositories"} className={view === "repositories" ? "active" : ""} onClick={() => setView("repositories")}>Repositories</button>
-          <button title="Monitor GitHub Actions for watched branches" id="ci-watch-tab" role="tab" aria-controls="ci-watch-view" aria-selected={view === "ci"} className={view === "ci" ? "active" : ""} onClick={() => setView("ci")}>CI Watch</button>
-          <button title="Review database structure and ordered migrations" id="databases-tab" role="tab" aria-controls="databases-view" aria-selected={view === "databases"} className={view === "databases" ? "active" : ""} onClick={() => setView("databases")}>Databases</button>
-        </nav>
+        <div className="workspace-header">
+          <nav className="workspace-nav" role="tablist" aria-label="Main views">
+            <button title="Inspect local repositories" id="repositories-tab" role="tab" aria-controls="repositories-view" aria-selected={view === "repositories"} className={view === "repositories" ? "active" : ""} onClick={() => setView("repositories")}>Repositories</button>
+            <button title="Monitor GitHub Actions for watched branches" id="ci-watch-tab" role="tab" aria-controls="ci-watch-view" aria-selected={view === "ci"} className={view === "ci" ? "active" : ""} onClick={() => setView("ci")}>CI Watch</button>
+            <button title="Review database structure and ordered migrations" id="databases-tab" role="tab" aria-controls="databases-view" aria-selected={view === "databases"} className={view === "databases" ? "active" : ""} onClick={() => setView("databases")}>Databases</button>
+          </nav>
+          {canUpdateInstalledApp && (
+            <button title="Build from the local checkout and restart Repo Radar" disabled={updatingInstalledApp} onClick={() => void updateInstalledApp()}>
+              {updatingInstalledApp ? "Updating…" : "Update Repo Radar"}
+            </button>
+          )}
+        </div>
         <div id="repositories-view" className="workspace-pane" role="tabpanel" aria-labelledby="repositories-tab" hidden={view !== "repositories"}>
           <RepoDetail
             repo={selected}
@@ -239,7 +260,7 @@ export function App() {
           <Databases active={view === "databases"} root={settings.rootFolder} repos={repoRoot === settings.rootFolder ? repos : []} onOpenRepository={(repo) => { setSelectedId(repo.id); setView("repositories"); }} onOpenCi={() => setView("ci")} onMessage={setMessage} configurationVersion={databaseConfigurationVersion} onOpenSettings={profileId => { setSettingsTab("databases"); setSettingsProfileId(profileId); setSettingsOpen(true); }} />
         </div>
       </div>
-      <footer className="toast" aria-live="polite">{message}</footer>
+      <footer className="toast" aria-live="polite">{updatingInstalledApp ? "Building Repo Radar. It will reopen when the update is ready." : message}</footer>
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}

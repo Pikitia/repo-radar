@@ -2,7 +2,7 @@
 
 ## Scope and precedence
 
-Repo Radar is an independent Electron/React Windows desktop application for inspecting and operating on many local Git repositories. `AGENTS.md` is the repository-wide authority. A nearer nested `AGENTS.md` overrides it only for that subtree. Product requirements and design documents explain behavior but do not override safety rules here.
+Repo Radar is an independent Electron/React desktop application for inspecting and operating on many local Git repositories. `AGENTS.md` is the repository-wide authority. A nearer nested `AGENTS.md` overrides it only for that subtree. Product requirements and design documents explain behavior but do not override safety rules here.
 
 ## Working in this repository
 
@@ -29,7 +29,7 @@ npm test
 npm run build
 ```
 
-Use `npm run test:unit` or `npm run test:integration` for focused work. `npm run electron` builds Electron code and opens the desktop app; `npm run test:electron-smoke` launches Electron and may require a suitable Windows desktop environment. `npm run package` builds the Windows portable executable.
+Use `npm run test:unit` or `npm run test:integration` for focused work. `npm run electron` builds Electron code and opens the desktop app. `npm run test:electron-smoke` launches Electron and requires a suitable desktop environment, protected storage, and an available MCP port. `npm run package` builds the Windows portable executable. On Omarchy, `npm run install:omarchy` installs the launchable app and `npm run update:omarchy` replaces it with a fresh build from the current checkout.
 
 ## Architecture and safety invariants
 

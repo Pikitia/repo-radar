@@ -43,6 +43,8 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     getDatabaseMcpStatus: vi.fn().mockResolvedValue({ enabled: true, running: true, url: "http://127.0.0.1:47321/mcp" }),
     copyDatabaseMcpConfig: vi.fn().mockResolvedValue(undefined),
     getSettings: vi.fn().mockResolvedValue(settings),
+    canUpdateInstalledApp: vi.fn().mockResolvedValue(false),
+    updateInstalledApp: vi.fn().mockResolvedValue(true),
     updateSettings: vi.fn().mockResolvedValue(settings),
     chooseRootFolder: vi.fn().mockResolvedValue("C:/root"),
     discoverRepositories: vi.fn().mockResolvedValue([sampleRepo]),
@@ -98,6 +100,23 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
 }
 
 describe("App UI smoke", () => {
+  it("rebuilds the installed app once per click and allows retry after failure", async () => {
+    const api = installApi();
+    vi.mocked(api.canUpdateInstalledApp).mockResolvedValue(true);
+    let fail!: (error: Error) => void;
+    vi.mocked(api.updateInstalledApp).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Update Repo Radar" }));
+    const updating = screen.getByRole("button", { name: "Updating…" });
+    expect(updating).toBeDisabled();
+    fireEvent.click(updating);
+    expect(api.updateInstalledApp).toHaveBeenCalledTimes(1);
+    act(() => fail(new Error("The build failed.")));
+    expect(await screen.findByText("The build failed.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Update Repo Radar" }));
+    expect(api.updateInstalledApp).toHaveBeenCalledTimes(2);
+  });
+
   it("only offers remote promotion with both origin branches ahead, and creates nothing on cancellation", async () => {
     const api = installApi();
     vi.mocked(api.getBranchComparison).mockResolvedValue({

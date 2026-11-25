@@ -38,7 +38,8 @@ textarea { min-height: 210px; resize: vertical; width: 100%; }
 
 .app-shell { display: grid; grid-template-columns: var(--sidebar-width, 355px) 6px minmax(560px, 1fr); height: 100vh; }
 .workspace { display: flex; flex-direction: column; height: 100vh; min-width: 0; min-height: 0; }
-.workspace-nav { display: flex; gap: 6px; padding: 10px 18px; border-bottom: 1px solid #2d3239; background: #1d2025; }
+.workspace-header { display: flex; justify-content: space-between; gap: 6px; padding: 10px 18px; border-bottom: 1px solid #2d3239; background: #1d2025; }
+.workspace-nav { display: flex; gap: 6px; }
 .workspace-nav .active { background: #3b4b5f; border-color: #65768c; }
 .workspace-pane { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .workspace-pane[hidden] { display: none; }
