@@ -9,6 +9,7 @@ export type ParsedStatus = {
   branch: string | null;
   upstream: string | null;
   isDetachedHead: boolean;
+  isUnborn: boolean;
   ahead: number;
   behind: number;
   files: ChangedFile[];
@@ -25,17 +26,33 @@ function mapStatusCode(code: string): ChangeKind {
   return "unknown";
 }
 
+function submoduleChange(parts: string[]): ChangedFile["submoduleChange"] {
+  const flags = parts[2];
+  if (flags?.[0] !== "S" || parts[4] !== "160000" || parts[5] !== "160000") return undefined;
+  const dirty = flags[2] === "M" || flags[3] === "U";
+  if (flags[1] === "C") return dirty ? "commit-and-contents" : "commit";
+  return dirty ? "contents" : undefined;
+}
+
 export function parsePorcelainV2(output: string): ParsedStatus {
   const files: ChangedFile[] = [];
   const conflicts: string[] = [];
   let branch: string | null = null;
   let upstream: string | null = null;
   let isDetachedHead = false;
+  let isUnborn = false;
   let ahead = 0;
   let behind = 0;
 
-  for (const line of output.split(/\r?\n/)) {
+  const nulDelimited = output.includes("\0");
+  const records = output.split(nulDelimited ? "\0" : /\r?\n/);
+  for (let index = 0; index < records.length; index++) {
+    const line = records[index];
     if (!line) continue;
+    if (line === "# branch.oid (initial)") {
+      isUnborn = true;
+      continue;
+    }
     if (line.startsWith("# branch.head ")) {
       const head = line.slice("# branch.head ".length).trim();
       isDetachedHead = head === "(detached)";
@@ -74,10 +91,13 @@ export function parsePorcelainV2(output: string): ParsedStatus {
       const pathStart = line.startsWith("2 ") ? 9 : 8;
       const fileParts = parts.slice(pathStart);
       const rawPath = fileParts.join(" ");
-      const [newPath, oldPath] = rawPath.split("\t");
+      const [newPath, oldPath] = nulDelimited
+        ? [rawPath, line.startsWith("2 ") ? records[++index] : undefined]
+        : rawPath.split("\t");
       files.push({
         path: newPath,
         oldPath,
+        submoduleChange: submoduleChange(parts),
         kind: mapStatusCode(stagedCode !== "." ? stagedCode : unstagedCode),
         staged: stagedCode !== ".",
         unstaged: unstagedCode !== ".",
@@ -87,19 +107,19 @@ export function parsePorcelainV2(output: string): ParsedStatus {
     }
   }
 
-  return { branch, upstream, isDetachedHead, ahead, behind, files, conflicts };
+  return { branch, upstream, isDetachedHead, isUnborn, ahead, behind, files, conflicts };
 }
 
-async function hasGitStateFile(repoPath: string, relativePath: string): Promise<boolean> {
+async function hasGitStateFile(gitDir: string, relativePath: string): Promise<boolean> {
   try {
-    await fs.access(path.join(repoPath, ".git", relativePath));
+    await fs.access(path.join(gitDir, relativePath));
     return true;
   } catch {
     return false;
   }
 }
 
-async function detectWarnings(repoPath: string, parsed: ParsedStatus, fetchWarning?: GitIssue): Promise<{ warnings: GitIssue[]; errors: GitIssue[] }> {
+async function detectWarnings(gitDir: string, parsed: ParsedStatus, fetchWarning?: GitIssue): Promise<{ warnings: GitIssue[]; errors: GitIssue[] }> {
   const warnings: GitIssue[] = [];
   const errors: GitIssue[] = [];
 
@@ -107,10 +127,15 @@ async function detectWarnings(repoPath: string, parsed: ParsedStatus, fetchWarni
   if (parsed.isDetachedHead) warnings.push({ code: "detached-head", message: "Detached HEAD." });
   if (!parsed.upstream) warnings.push({ code: "missing-upstream", message: "No upstream branch configured." });
   if (parsed.conflicts.length > 0) errors.push({ code: "conflicts", message: "Merge conflicts are present." });
-  if (await hasGitStateFile(repoPath, "MERGE_HEAD")) errors.push({ code: "merge-in-progress", message: "Merge in progress." });
-  if (await hasGitStateFile(repoPath, "rebase-merge")) errors.push({ code: "rebase-in-progress", message: "Rebase in progress." });
-  if (await hasGitStateFile(repoPath, "rebase-apply")) errors.push({ code: "rebase-in-progress", message: "Rebase in progress." });
-  if (await hasGitStateFile(repoPath, "CHERRY_PICK_HEAD")) errors.push({ code: "cherry-pick-in-progress", message: "Cherry-pick in progress." });
+  const [merging, rebasing, applying, am, cherryPicking, reverting] = await Promise.all(
+    ["MERGE_HEAD", "rebase-merge", "rebase-apply", "rebase-apply/applying", "CHERRY_PICK_HEAD", "REVERT_HEAD"]
+      .map(file => hasGitStateFile(gitDir, file))
+  );
+  if (merging) errors.push({ code: "merge-in-progress", message: "Merge in progress." });
+  if (am) errors.push({ code: "am-in-progress", message: "Applying a patch series." });
+  else if (rebasing || applying) errors.push({ code: "rebase-in-progress", message: "Rebase in progress." });
+  if (cherryPicking) errors.push({ code: "cherry-pick-in-progress", message: "Cherry-pick in progress." });
+  if (reverting) errors.push({ code: "revert-in-progress", message: "Revert in progress." });
 
   return { warnings, errors };
 }
@@ -144,9 +169,12 @@ export async function getRepositoryStatus(repoPath: string, rootPath: string, fe
     }
   }
 
-  const status = await runGit(repoPath, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]);
+  const [status, gitDir] = await Promise.all([
+    runGit(repoPath, ["status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all"]),
+    runGit(repoPath, ["rev-parse", "--absolute-git-dir"])
+  ]);
   const parsed = parsePorcelainV2(status.stdout);
-  const issues = await detectWarnings(repoPath, parsed, fetchWarning);
+  const issues = await detectWarnings(gitDir.stdout.trimEnd(), parsed, fetchWarning);
   const relativePath = path.relative(rootPath, repoPath) || path.basename(repoPath);
   const parent = path.dirname(relativePath);
   const projectFiles = await getProjectFiles(repoPath);
@@ -168,6 +196,7 @@ export async function getRepositoryStatus(repoPath: string, rootPath: string, fe
     branch: parsed.branch,
     upstream: parsed.upstream,
     isDetachedHead: parsed.isDetachedHead,
+    isUnborn: parsed.isUnborn,
     hasUnstagedChanges: parsed.files.some((file) => file.unstaged),
     hasStagedChanges: parsed.files.some((file) => file.staged),
     hasUntrackedFiles: parsed.files.some((file) => file.untracked),

@@ -16,13 +16,13 @@ export class GitCommandError extends Error {
   }
 }
 
-export function runGit(cwd: string, args: string[], timeoutMs = 30000): Promise<GitResult> {
+export function runGit(cwd: string, args: string[], timeoutMs = 30000, env?: NodeJS.ProcessEnv): Promise<GitResult> {
   return new Promise((resolve, reject) => {
     const child = spawn("git", args, {
       cwd,
       shell: false,
       windowsHide: true,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+      env: { ...process.env, ...env, GIT_TERMINAL_PROMPT: "0" }
     });
 
     let stdout = "";
@@ -56,9 +56,9 @@ export function runGit(cwd: string, args: string[], timeoutMs = 30000): Promise<
   });
 }
 
-export async function tryGit(cwd: string, args: string[], timeoutMs = 30000): Promise<GitResult> {
+export async function tryGit(cwd: string, args: string[], timeoutMs = 30000, env?: NodeJS.ProcessEnv): Promise<GitResult> {
   try {
-    return await runGit(cwd, args, timeoutMs);
+    return await runGit(cwd, args, timeoutMs, env);
   } catch (error) {
     if (error instanceof GitCommandError) {
       return error.result;

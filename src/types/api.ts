@@ -1,7 +1,7 @@
 import type { AppSettings, DatabaseMcpStatus } from "./settings.js";
 import type { DatabaseDesktopApi } from "./databaseApi.js";
 import type { CiWatch, CiWatchInput, CiWorkflow, CiRun, CiJob } from "./ci.js";
-import type { BranchComparison, DiffMode, DiffResult, RepoStatus, ProjectFile } from "./repo.js";
+import type { BranchComparison, DiffMode, DiffResult, RepoStatus, ProjectFile, SyncCommitGuard, SyncConflictReview, SyncDecision } from "./repo.js";
 
 export type ScanOptions = {
   root: string;
@@ -82,7 +82,11 @@ export type RepoRadarApi = {
   commit(path: string, message: string): Promise<RepoStatus>;
   pull(path: string): Promise<RepoStatus>;
   push(path: string): Promise<RepoStatus>;
-  sync(path: string): Promise<RepoStatus>;
+  sync(path: string, displayedBranch: string): Promise<RepoStatus>;
+  commitAndSync(path: string, expected: SyncCommitGuard, files: string[], message: string): Promise<RepoStatus>;
+  confirmSyncPush(path: string, token: string): Promise<RepoStatus>;
+  getSyncConflictReview(path: string): Promise<SyncConflictReview>;
+  finishSync(path: string, token: string, decisions: SyncDecision[], skipEmptyPatch?: boolean): Promise<RepoStatus>;
   getNpmVerifyScript(path: string): Promise<NpmScriptCommand | null>;
   startNpmCommand(path: string, runId: string, command: "update" | NpmScriptCommand): Promise<void>;
   onNpmCommandEvent(callback: (event: NpmCommandEvent) => void): () => void;

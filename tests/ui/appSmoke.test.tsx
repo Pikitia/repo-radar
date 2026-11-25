@@ -82,6 +82,10 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
     pull: vi.fn().mockResolvedValue(sampleRepo),
     push: vi.fn().mockResolvedValue(sampleRepo),
     sync: vi.fn().mockResolvedValue(sampleRepo),
+    commitAndSync: vi.fn(),
+    confirmSyncPush: vi.fn(),
+    getSyncConflictReview: vi.fn(),
+    finishSync: vi.fn(),
     getNpmVerifyScript: vi.fn().mockResolvedValue("verify"),
     startNpmCommand: vi.fn().mockResolvedValue(undefined),
     onNpmCommandEvent: vi.fn().mockReturnValue(() => undefined),
@@ -98,6 +102,366 @@ function installApi(settings: AppSettings = { ...defaultSettings, rootFolder: "C
 }
 
 describe("App UI smoke", () => {
+  const pausedMerge: RepoStatus = {
+    ...sampleRepo, ahead: 1, behind: 1, conflicts: ["guide.md", "logo.png"],
+    errors: [{ code: "merge-in-progress", message: "Merge in progress." }]
+  };
+
+  it("keeps Git actions disabled when a shortcut finishes during a pending Sync", async () => {
+    const api = installApi();
+    const diverged = { ...sampleRepo, ahead: 1, behind: 1 };
+    vi.mocked(api.refreshRepository).mockResolvedValue(diverged);
+    let complete!: (status: RepoStatus) => void;
+    vi.mocked(api.sync).mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+    render(<App />);
+    const pull = await screen.findByRole("button", { name: "Pull" });
+    await waitFor(() => expect(pull).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in VS Code" }));
+    await screen.findByText("Opened VS Code.");
+    expect(api.openVSCode).toHaveBeenCalledWith(sampleRepo.absolutePath);
+    for (const name of ["Pull", "Push", "Commit", "Sync"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+    }
+    expect(api.pull).not.toHaveBeenCalled();
+    expect(api.push).not.toHaveBeenCalled();
+    expect(api.sync).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => complete(diverged));
+    await waitFor(() => expect(pull).toBeEnabled());
+  });
+
+  it("keeps keyboard focus inside each sync prompt and returns to the disabled-then-restored launcher", async () => {
+    const api = installApi();
+    const dirty = { ...sampleRepo, syncCommitRequired: "Overlapping edits", syncCommitGuard: { branch: "main", token: "initial" },
+      files: [...sampleRepo.files, { ...sampleRepo.files[0], path: "child", submoduleChange: "contents" as const },
+        { path: "nested/", kind: "untracked" as const, staged: false, unstaged: false, untracked: true, conflicted: false }] };
+    const fork = { ...sampleRepo, syncPushReview: { token: "fork", upstream: "origin/main", destination: "fork/main" } };
+    let initial!: (result: RepoStatus) => void;
+    let commit!: (result: RepoStatus) => void;
+    let merge!: (result: RepoStatus) => void;
+    let push!: (result: RepoStatus) => void;
+    vi.mocked(api.sync).mockImplementation(() => new Promise(resolve => { initial = resolve; }));
+    vi.mocked(api.commitAndSync).mockImplementation(() => new Promise(resolve => { commit = resolve; }));
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({ token: "merge", operation: "merge", files: [] });
+    vi.mocked(api.finishSync).mockImplementation(() => new Promise(resolve => { merge = resolve; }));
+    vi.mocked(api.confirmSyncPush).mockImplementation(() => new Promise(resolve => { push = resolve; }));
+    render(<App />);
+    const launcher = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => expect(launcher).toBeEnabled());
+    launcher.focus();
+    fireEvent.click(launcher);
+    expect(launcher).toBeDisabled();
+    launcher.blur(); // Chromium blurs buttons when a pending action disables them.
+    await act(async () => initial(dirty));
+
+    function checkFocusCycle(dialog: HTMLElement, first: HTMLElement, last: HTMLElement) {
+      expect(dialog).toHaveAttribute("open");
+      expect(first).toHaveFocus();
+      fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+      expect(last).toHaveFocus();
+      fireEvent.keyDown(last, { key: "Tab" });
+      expect(first).toHaveFocus();
+    }
+    function submitWhileBusy(dialog: HTMLElement, action: HTMLElement) {
+      fireEvent.click(action);
+      expect(dialog).toHaveAttribute("aria-busy", "true");
+      fireEvent.keyDown(dialog, { key: "Tab" });
+      expect(dialog).toHaveFocus();
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
+      expect(dialog).toHaveAttribute("open");
+    }
+
+    const commitDialog = await screen.findByRole("dialog", { name: "Save local changes to sync" });
+    const save = await within(commitDialog).findByRole("button", { name: "Commit and continue sync" });
+    expect(within(commitDialog).getByRole("checkbox", { name: "nested/" })).toBeDisabled();
+    expect(within(commitDialog).getByRole("checkbox", { name: "nested/" })).not.toBeChecked();
+    expect(within(commitDialog).getByRole("checkbox", { name: /child.*Commit file changes inside this submodule/i })).toBeDisabled();
+    expect(within(commitDialog).getByRole("checkbox", { name: "src/app.ts" })).toBeChecked();
+    checkFocusCycle(commitDialog, within(commitDialog).getByRole("button", { name: "Close" }), save);
+    submitWhileBusy(commitDialog, save);
+    expect(api.commitAndSync).toHaveBeenCalledWith(sampleRepo.absolutePath, dirty.syncCommitGuard, ["src/app.ts"], expect.any(String));
+    await act(async () => commit(pausedMerge));
+
+    const mergeDialog = await screen.findByRole("dialog", { name: "Review merge" });
+    const finish = await within(mergeDialog).findByRole("button", { name: "Finish sync and push" });
+    checkFocusCycle(mergeDialog, within(mergeDialog).getByRole("button", { name: "Close" }), finish);
+    submitWhileBusy(mergeDialog, finish);
+    await act(async () => merge(fork));
+
+    const forkDialog = await screen.findByRole("dialog", { name: "Confirm push destination" });
+    const confirm = within(forkDialog).getByRole("button", { name: "Push to fork/main" });
+    checkFocusCycle(forkDialog, within(forkDialog).getByRole("button", { name: "Cancel" }), confirm);
+    submitWhileBusy(forkDialog, confirm);
+    await act(async () => push(sampleRepo));
+    await waitFor(() => expect(launcher).toHaveFocus());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("records a selected submodule commit and explains where its uncommitted changes stay", async () => {
+    const api = installApi();
+    const guard = { branch: "main", token: "submodule-review" };
+    vi.mocked(api.sync).mockResolvedValue({ ...sampleRepo, syncCommitRequired: "Overlapping changes", syncCommitGuard: guard,
+      files: [...sampleRepo.files, { ...sampleRepo.files[0], path: "child", submoduleChange: "commit-and-contents" }] });
+    vi.mocked(api.commitAndSync).mockResolvedValue(sampleRepo);
+    render(<App />);
+    const sync = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => expect(sync).toBeEnabled());
+    fireEvent.click(sync);
+    const dialog = within(await screen.findByRole("dialog", { name: "Save local changes to sync" }));
+    const child = await dialog.findByRole("checkbox", { name: /child.*Record the new submodule commit.*Uncommitted files stay/i });
+    expect(child).toBeEnabled();
+    expect(child).not.toBeChecked();
+    fireEvent.click(child);
+    fireEvent.click(dialog.getByRole("button", { name: "Commit and continue sync" }));
+    await waitFor(() => expect(api.commitAndSync).toHaveBeenCalledWith(sampleRepo.absolutePath, guard, ["child"], expect.any(String)));
+  });
+
+  it("guides Sync through multiple text conflicts and a deletion before sending reviewed decisions", async () => {
+    const api = installApi();
+    vi.mocked(api.refreshRepository).mockResolvedValue({ ...sampleRepo, ahead: 1, behind: 1 });
+    vi.mocked(api.sync).mockResolvedValue(pausedMerge);
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({
+      operation: "merge", token: "reviewed",
+      files: [
+        { path: "guide.md", local: { exists: true, text: "local file" }, incoming: { exists: true, text: "incoming file" },
+          mergedText: "clean local edit\r\n<<<<<<< HEAD\r\none\r\n=======\r\ntwo\r\n>>>>>>> incoming\r\nclean incoming edit\r\n<<<<<<< HEAD\r\nthree\r\n||||||| ancestor\r\nbase\r\n=======\r\nfour\r\n>>>>>>> incoming\r\nend" },
+        { path: "logo.png", local: { exists: true, text: null }, incoming: { exists: false, text: null }, mergedText: null }
+      ]
+    });
+    vi.mocked(api.finishSync).mockResolvedValue(sampleRepo);
+    render(<App />);
+    const sync = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => expect(sync).toBeEnabled());
+    fireEvent.click(sync);
+    const dialog = within(await screen.findByRole("dialog", { name: "Review merge" }));
+    expect(api.sync).toHaveBeenCalledWith(sampleRepo.absolutePath, sampleRepo.branch);
+    const finish = await dialog.findByRole("button", { name: "Finish sync and push" });
+    expect(finish).toBeDisabled();
+    expect(screen.queryByText("Sync complete.")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog.getByRole("region", { name: "Conflict 1" })).getByRole("button", { name: "Keep local change" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Edit merged text" }));
+    const partial = (dialog.getByRole("textbox", { name: "Merged file contents" }) as HTMLTextAreaElement).value;
+    expect(partial).toContain("clean local edit\none\nclean incoming edit\n<<<<<<< HEAD");
+    expect(finish).toBeDisabled();
+    fireEvent.click(dialog.getByRole("button", { name: "Discard text edits and return to choices" }));
+    expect(within(dialog.getByRole("region", { name: "Conflict 1" })).getByRole("button", { name: "Keep local change" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(dialog.getByRole("region", { name: "Conflict 2" })).getByRole("button", { name: "Keep incoming change" }));
+    expect(finish).toBeDisabled();
+    fireEvent.click(dialog.getByRole("button", { name: "Next unresolved file" }));
+    expect(dialog.getByText("Preview unavailable for this file.")).toBeVisible();
+    fireEvent.click(dialog.getByRole("button", { name: "Use incoming deletion" }));
+    fireEvent.click(finish);
+    await waitFor(() => expect(api.finishSync).toHaveBeenCalledWith(sampleRepo.absolutePath, "reviewed", [
+      { path: "guide.md", choice: "edited", text: "clean local edit\r\none\r\nclean incoming edit\r\nfour\r\nend" },
+      { path: "logo.png", choice: "incoming" }
+    ], false));
+    expect(await screen.findByText("Sync complete.")).toBeVisible();
+  });
+
+  it("recovers edited text and preserves choices only for unchanged conflicts after a failed finish", async () => {
+    const api = installApi();
+    vi.mocked(api.refreshRepository).mockResolvedValue(pausedMerge);
+    const guide = { path: "guide.md", identity: "same-guide", local: { exists: true, text: "left" },
+      incoming: { exists: true, text: "right" }, mergedText: "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> incoming\n" };
+    const binary = { path: "logo.png", local: { exists: true, text: null }, incoming: { exists: true, text: null }, mergedText: null };
+    const original = { operation: "merge" as const, token: "before", files: [guide, binary] };
+    vi.mocked(api.getSyncConflictReview).mockResolvedValueOnce(original).mockResolvedValueOnce(original)
+      .mockResolvedValueOnce({ ...original, token: "after", files: [{ ...binary, identity: "new-binary" }, guide] });
+    vi.mocked(api.finishSync).mockRejectedValueOnce(new Error("Git is busy."))
+      .mockRejectedValueOnce(new Error("The repository changed.")).mockResolvedValueOnce(sampleRepo);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review merge" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Review merge" }));
+    const finish = () => dialog.getByRole("button", { name: "Finish sync and push" });
+    fireEvent.click(await dialog.findByRole("button", { name: "Edit merged text" }));
+    fireEvent.change(dialog.getByRole("textbox"), { target: { value: "Handwritten resolution\n" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Next unresolved file" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Keep incoming file" }));
+    fireEvent.click(finish());
+    await dialog.findByText("Review refreshed. Kept your choices for 2 unchanged files.");
+    expect(dialog.getByRole("button", { name: "Keep incoming file" })).toHaveAttribute("aria-pressed", "true");
+    expect(finish()).toBeEnabled();
+    fireEvent.click(finish());
+    await dialog.findByText("Review refreshed. Kept your choices for 1 unchanged file.");
+    expect(dialog.getByRole("combobox")).toHaveDisplayValue("logo.png");
+    expect(dialog.getByRole("button", { name: "Keep incoming file" })).toHaveAttribute("aria-pressed", "false");
+    expect(finish()).toBeDisabled();
+    fireEvent.click(dialog.getByRole("button", { name: "Keep local file" }));
+    fireEvent.change(dialog.getByRole("combobox"), { target: { value: "1" } });
+    expect(dialog.getByRole("textbox")).toHaveValue("Handwritten resolution\n");
+    fireEvent.click(finish());
+    await screen.findByText("Sync complete.");
+    expect(api.finishSync).toHaveBeenLastCalledWith(sampleRepo.absolutePath, "after",
+      [{ path: "logo.png", choice: "local" }, { path: "guide.md", choice: "edited", text: "Handwritten resolution\n" }], false);
+  });
+
+  it("applies attribute choices before reviewing dependent files and shows existing staged changes", async () => {
+    const api = installApi();
+    vi.mocked(api.refreshRepository).mockResolvedValue(pausedMerge);
+    const sides = { local: { exists: true, text: "local" }, incoming: { exists: true, text: "incoming" }, mergedText: null };
+    vi.mocked(api.getSyncConflictReview)
+      .mockResolvedValueOnce({ token: "attributes", operation: "merge", hasDeferredFiles: true,
+        files: [{ path: ".gitattributes", ...sides }], stagedPaths: ["separate.txt"] })
+      .mockResolvedValueOnce({ token: "content", operation: "merge", files: [{ path: "note.txt", ...sides }] });
+    vi.mocked(api.finishSync).mockResolvedValueOnce(pausedMerge).mockResolvedValueOnce(sampleRepo);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review merge" }));
+    const first = await screen.findByRole("button", { name: "Apply choices and continue review" });
+    expect(screen.queryByRole("button", { name: "Finish sync and push" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Already staged for this merge (1)"));
+    expect(screen.getByText("separate.txt")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Keep local file" }));
+    fireEvent.click(first);
+    await screen.findByRole("option", { name: "note.txt" });
+    expect(api.finishSync).toHaveBeenCalledWith(sampleRepo.absolutePath, "attributes", [{ path: ".gitattributes", choice: "local" }], false);
+    fireEvent.click(screen.getByRole("button", { name: "Keep incoming file" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finish sync and push" }));
+    expect(await screen.findByText("Sync complete.")).toBeVisible();
+  });
+
+  it("leaves an empty rebase commit paused until the user explicitly skips it", async () => {
+    const api = installApi();
+    const paused = { ...pausedMerge, branch: null, upstream: null, isDetachedHead: true, conflicts: [],
+      errors: [{ code: "rebase-in-progress", message: "Rebase in progress." }] };
+    vi.mocked(api.refreshRepository).mockResolvedValue(paused);
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({ token: "empty", operation: "rebase", files: [], canSkipEmptyPatch: true });
+    vi.mocked(api.finishSync).mockResolvedValue(sampleRepo);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review merge" }));
+    expect(await screen.findByText(/Your choices leave this commit with no changes/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Finish sync and push" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(api.finishSync).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Review merge" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Skip empty commit and continue sync" }));
+    expect(await screen.findByText("Sync complete.")).toBeVisible();
+    expect(api.finishSync).toHaveBeenCalledWith(sampleRepo.absolutePath, "empty", [], true);
+  });
+
+  it("resumes a paused rebase, reviews the next stop, and shows a push failure after completion", async () => {
+    const api = installApi();
+    const paused = { ...pausedMerge, branch: null, upstream: null, isDetachedHead: true,
+      errors: [{ code: "rebase-in-progress", message: "Rebase in progress." }] };
+    vi.mocked(api.refreshRepository).mockResolvedValue(paused);
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({
+      token: "first", operation: "rebase", files: [{ path: "guide.md", local: { exists: true, text: "my work" },
+        incoming: { exists: true, text: "updated branch" }, mergedText: "<<<<<<< HEAD\nupdated branch\n=======\nmy work\n>>>>>>> Local commit\n" }]
+    });
+    vi.mocked(api.finishSync).mockResolvedValueOnce(paused).mockRejectedValueOnce(new Error("Push rejected by remote."));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review merge" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit merged text" }));
+    const editor = screen.getByRole("textbox", { name: "Merged file contents" });
+    expect((editor as HTMLTextAreaElement).value).toContain("<<<<<<< HEAD");
+    expect(screen.getByRole("button", { name: "Finish sync and push" })).toBeDisabled();
+    fireEvent.change(editor, { target: { value: "my combined work\n" } });
+    expect(screen.getByRole("button", { name: "Finish sync and push" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(api.finishSync).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Review merge" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Keep local change" }));
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({ token: "next", operation: "rebase", files: [] });
+    fireEvent.click(screen.getByRole("button", { name: "Finish sync and push" }));
+    await screen.findByText(/All conflicts have been staged/);
+    expect(api.finishSync).toHaveBeenCalledWith(sampleRepo.absolutePath, "first", [{ path: "guide.md", choice: "edited", text: "my work" }], false);
+    vi.mocked(api.refreshRepository).mockResolvedValue({ ...sampleRepo, ahead: 2 });
+    fireEvent.click(screen.getByRole("button", { name: "Finish sync and push" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByText("Push rejected by remote.")).toBeVisible();
+    expect(api.finishSync).toHaveBeenLastCalledWith(sampleRepo.absolutePath, "next", [], false);
+    expect(api.refreshRepository).toHaveBeenLastCalledWith(sampleRepo.absolutePath, false);
+    expect(screen.getByRole("button", { name: "Push" })).toBeEnabled();
+    expect(screen.queryByText("Sync complete.")).not.toBeInTheDocument();
+    expect(api.sync).not.toHaveBeenCalled();
+  });
+
+  it("offers to commit overlapping local work and retries Sync only after a commit", async () => {
+    const api = installApi();
+    const dirty = { ...sampleRepo, behind: 1, files: [{ ...sampleRepo.files[0], path: "guide.md" }] };
+    const guard = { branch: "main", token: "local-index" };
+    const reason = "Your local changes to guide.md would be overwritten by merge.";
+    vi.mocked(api.refreshRepository).mockResolvedValue(dirty);
+    vi.mocked(api.sync).mockResolvedValue({ ...dirty, syncCommitRequired: reason, syncCommitGuard: guard });
+    vi.mocked(api.commitAndSync).mockResolvedValue(pausedMerge);
+    vi.mocked(api.getCommitPreview).mockResolvedValue({ blockers: [], staged: [], unstaged: ["guide.md"], untracked: [], aiAvailable: false, packageVersion: null });
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({ token: "after-commit", operation: "merge", files: [] });
+    render(<App />);
+    const sync = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => expect(sync).toBeEnabled());
+    fireEvent.click(sync);
+    const prompt = within(await screen.findByRole("dialog"));
+    fireEvent.click(await prompt.findByText("Show Git’s explanation"));
+    expect(prompt.getByText(reason)).toBeVisible();
+    fireEvent.click(prompt.getByRole("button", { name: "Close" }));
+    expect(api.commit).not.toHaveBeenCalled();
+    expect(api.sync).toHaveBeenCalledTimes(1);
+    fireEvent.click(sync);
+    const again = within(await screen.findByRole("dialog"));
+    fireEvent.change(await again.findByPlaceholderText("Commit message"), { target: { value: "Keep my guide changes" } });
+    expect(again.getByRole("checkbox", { name: "guide.md" })).toBeChecked();
+    fireEvent.click(again.getByRole("button", { name: "Commit and continue sync" }));
+    await screen.findByRole("dialog", { name: "Review merge" });
+    expect(api.commitAndSync).toHaveBeenCalledWith(sampleRepo.absolutePath, guard, ["guide.md"], "Keep my guide changes");
+    expect(api.commit).not.toHaveBeenCalled();
+    expect(api.stageFiles).not.toHaveBeenCalled();
+    expect(api.sync).toHaveBeenCalledTimes(2);
+    expect(api.push).not.toHaveBeenCalled();
+  });
+
+  it("requires a fresh choice after the checkout changes and independently selects the rest of a partially staged file", async () => {
+    const api = installApi();
+    const first = { ...sampleRepo, behind: 1, syncCommitRequired: "Local changes overlap.",
+      syncCommitGuard: { branch: "main", token: "first" }, files: [{ ...sampleRepo.files[0], staged: true }] };
+    const second = { ...first, branch: "develop", syncCommitRequired: "The branch changed. Review this checkout.",
+      syncCommitGuard: { branch: "develop", token: "second" } };
+    vi.mocked(api.sync).mockResolvedValue(first);
+    vi.mocked(api.commitAndSync).mockResolvedValueOnce(second).mockResolvedValueOnce(sampleRepo);
+    render(<App />);
+    const sync = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => expect(sync).toBeEnabled());
+    fireEvent.click(sync);
+    let prompt = within(await screen.findByRole("dialog"));
+    expect(await prompt.findByRole("list", { name: "Already staged" })).toHaveTextContent("src/app.ts");
+    const remaining = prompt.getByRole("checkbox", { name: "src/app.ts" });
+    expect(remaining).not.toBeChecked();
+    fireEvent.click(remaining);
+    fireEvent.click(prompt.getByRole("button", { name: "Commit and continue sync" }));
+    await screen.findByText("repo-one · develop");
+    prompt = within(screen.getByRole("dialog"));
+    expect(await prompt.findByRole("checkbox", { name: "src/app.ts" })).not.toBeChecked();
+    expect(api.commitAndSync).toHaveBeenCalledTimes(1);
+    expect(api.commitAndSync).toHaveBeenCalledWith(sampleRepo.absolutePath, first.syncCommitGuard, ["src/app.ts"], expect.any(String));
+    fireEvent.click(prompt.getByRole("button", { name: "Commit and continue sync" }));
+    await waitFor(() => expect(api.commitAndSync).toHaveBeenLastCalledWith(sampleRepo.absolutePath, second.syncCommitGuard, [], expect.any(String)));
+  });
+
+  it("shows the configured fork after a merge and pushes only after an explicit destination choice", async () => {
+    const api = installApi();
+    const pending = { ...sampleRepo, ahead: 1, syncPushReview: { token: "fork-head", upstream: "origin/main", destination: "fork/main" } };
+    vi.mocked(api.sync).mockResolvedValueOnce(pausedMerge).mockResolvedValueOnce(pending);
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({ token: "merge", operation: "merge", files: [] });
+    vi.mocked(api.finishSync).mockResolvedValue(pending);
+    vi.mocked(api.confirmSyncPush).mockResolvedValue({ ...sampleRepo, ahead: 1 });
+    render(<App />);
+    const sync = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => expect(sync).toBeEnabled());
+    fireEvent.click(sync);
+    fireEvent.click(await screen.findByRole("button", { name: "Finish sync and push" }));
+    const prompt = within(await screen.findByRole("dialog", { name: "Confirm push destination" }));
+    expect(prompt.getByText("origin/main")).toBeVisible();
+    expect(prompt.getByText("fork/main")).toBeVisible();
+    fireEvent.click(prompt.getByRole("button", { name: "Cancel" }));
+    expect(api.confirmSyncPush).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Push to fork/main" }));
+    await screen.findByText("Pushed to fork/main.");
+    expect(api.confirmSyncPush).toHaveBeenCalledWith(sampleRepo.absolutePath, "fork-head");
+  });
+
   it("only offers remote promotion with both origin branches ahead, and creates nothing on cancellation", async () => {
     const api = installApi();
     vi.mocked(api.getBranchComparison).mockResolvedValue({
@@ -174,6 +538,25 @@ describe("App UI smoke", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Both origin/develop and origin/main must exist.");
     expect(screen.queryByRole("button", { name: "Confirm PR and merge" })).not.toBeInTheDocument();
     expect(api.promoteDevelop).not.toHaveBeenCalled();
+  });
+
+  it.each(["success", "failure"])("keeps completed sync when an older background comparison finishes with %s", async outcome => {
+    const api = installApi();
+    vi.mocked(api.refreshRepository).mockResolvedValue(pausedMerge);
+    let finishBackground!: () => void;
+    vi.mocked(api.getBranchComparison).mockImplementationOnce(() => new Promise((resolve, reject) => {
+      finishBackground = () => outcome === "success" ? resolve(null) : reject(new Error("Older comparison failed"));
+    }));
+    vi.mocked(api.getSyncConflictReview).mockResolvedValue({ token: "staged", operation: "merge", files: [] });
+    vi.mocked(api.finishSync).mockResolvedValue(sampleRepo);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review merge" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Finish sync and push" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled());
+    await act(async () => finishBackground());
+    expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Review merge" })).not.toBeInTheDocument();
+    expect(screen.getByText("Sync complete.")).toBeVisible();
   });
 
   it("refreshes remote promotion eligibility after a repository toolbar refresh", async () => {

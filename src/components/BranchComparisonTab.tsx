@@ -5,7 +5,7 @@ import { SideBySideDiff } from "./SideBySideDiff";
 type Props = {
   repo: RepoStatus;
   onMessage(message: string): void;
-  onRepoUpdated(repo: RepoStatus): void;
+  onCompare(repo: RepoStatus, expected: RepoStatus): Promise<string | undefined>;
 };
 
 type DiffState = {
@@ -13,7 +13,7 @@ type DiffState = {
   diff: DiffResult | null;
 };
 
-export function BranchComparisonTab({ repo, onMessage, onRepoUpdated }: Props) {
+export function BranchComparisonTab({ repo, onMessage, onCompare }: Props) {
   const comparison = repo.branchComparison;
   const commits = comparison?.commitsInDevelopNotMain ?? [];
   const [selected, setSelected] = useState<BranchComparisonCommit | null>(commits[0] ?? null);
@@ -24,30 +24,9 @@ export function BranchComparisonTab({ repo, onMessage, onRepoUpdated }: Props) {
   }, [repo.id, commits.map((commit) => commit.hash).join("|")]);
 
   useEffect(() => {
-    let cancelled = false;
     if (repo.branchComparisonLoaded || repo.branchComparisonLoading || repo.statusLoading) return;
-
-    onRepoUpdated({ ...repo, branchComparisonLoading: true });
-    void window.repoRadar.getBranchComparison(repo.absolutePath).then((result) => {
-      if (!cancelled) {
-        onRepoUpdated({
-          ...repo,
-          branchComparison: result,
-          branchComparisonLoaded: true,
-          branchComparisonLoading: false
-        });
-      }
-    }).catch((error: unknown) => {
-      if (!cancelled) {
-        onRepoUpdated({ ...repo, branchComparison: null, branchComparisonLoaded: true, branchComparisonLoading: false });
-        onMessage(error instanceof Error ? error.message : String(error));
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [repo.id, repo.absolutePath, repo.branchComparisonLoaded, repo.statusLoading]);
+    void onCompare(repo, repo);
+  }, [repo, onCompare]);
 
   useEffect(() => {
     let cancelled = false;

@@ -1,7 +1,8 @@
 import { CheckCircle2, Code2, Copy, Download, FolderOpen, GitCommit, GitPullRequest, GitMerge, Globe, RefreshCw, Terminal, Upload, RotateCw } from "lucide-react";
 import type { NpmScriptCommand } from "../types/api";
 import type { RepoStatus } from "../types/repo";
-import { actionAvailability } from "../state/repoLogic";
+import { actionAvailability, canReviewSync } from "../state/repoLogic";
+import type { Ref } from "react";
 
 type Props = {
   repo: RepoStatus;
@@ -12,6 +13,7 @@ type Props = {
   onPull(): void;
   onPush(): void;
   onSync(): void;
+  syncButtonRef?: Ref<HTMLButtonElement>;
   onRefresh(): void;
   onNpmUpdate(): void;
   onNpmVerify?(): void;
@@ -25,12 +27,13 @@ type Props = {
 
 export function Toolbar(props: Props) {
   const availability = actionAvailability(props.repo);
+  const syncLabel = canReviewSync(props.repo) ? "Review merge" : "Sync";
   return (
     <div className="toolbar">
       <button title={availability.reasons.commit ?? "Commit"} disabled={!availability.commit || props.busy} onClick={props.onCommit}><GitCommit size={15} /> Commit</button>
       <button title={availability.reasons.pull ?? "Pull"} disabled={!availability.pull || props.busy} onClick={props.onPull}><GitPullRequest size={15} /> Pull</button>
       <button title={availability.reasons.push ?? "Push"} disabled={!availability.push || props.busy} onClick={props.onPush}><Upload size={15} /> Push</button>
-      <button title={availability.reasons.sync ?? "Sync"} disabled={!availability.sync || props.busy} onClick={props.onSync}><RotateCw size={15} /> Sync</button>
+      <button ref={props.syncButtonRef} title={availability.reasons.sync ?? syncLabel} disabled={!availability.sync || props.busy} onClick={props.onSync}><RotateCw size={15} /> {syncLabel}</button>
       <button title="Refresh repository" disabled={props.busy} onClick={props.onRefresh}><RefreshCw size={15} /> Refresh</button>
       <button
         title={props.npmCommandRunning ? "An npm command is already running for this project" : "Run npm update"}

@@ -5,6 +5,26 @@ const electron = vi.hoisted(() => ({ exposeInMainWorld: vi.fn(), invoke: vi.fn()
 vi.mock("electron", () => ({ contextBridge: { exposeInMainWorld: electron.exposeInMainWorld }, ipcRenderer: { invoke: electron.invoke } }));
 
 describe("CI preload contract", () => {
+  it("forwards sync reviews and decisions through the typed repository channels", async () => {
+    await import("../../electron/preload.js");
+    const api = electron.exposeInMainWorld.mock.calls[0][1] as RepoRadarApi;
+    const repo = "C:/root/repo";
+    const decisions = [{ path: "notes.txt", choice: "edited" as const, text: "combined\n" }];
+    electron.invoke.mockClear();
+    await api.sync(repo, "develop");
+    await api.getSyncConflictReview(repo);
+    await api.finishSync(repo, "review", decisions);
+    await api.finishSync(repo, "empty-patch", [], true);
+    const expected = { branch: "main", token: "staged-state" };
+    await api.commitAndSync(repo, expected, ["notes.txt"], "Save notes");
+    await api.confirmSyncPush(repo, "destination-review");
+    expect(electron.invoke.mock.calls).toEqual([
+      ["repo:sync", repo, "develop"], ["repo:syncConflictReview", repo], ["repo:finishSync", repo, "review", decisions, false],
+      ["repo:finishSync", repo, "empty-patch", [], true],
+      ["repo:commitAndSync", repo, expected, ["notes.txt"], "Save notes"], ["repo:confirmSyncPush", repo, "destination-review"]
+    ]);
+    electron.invoke.mockClear();
+  });
   it("exposes only typed develop PR preview and confirmed promotion channels", async () => {
     await import("../../electron/preload.js");
     const api = electron.exposeInMainWorld.mock.calls[0][1] as RepoRadarApi;

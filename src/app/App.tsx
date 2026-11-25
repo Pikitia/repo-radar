@@ -64,42 +64,23 @@ export function App() {
       setRepos(shells);
       setRepoRoot(settings.rootFolder);
       setSelectedId((current) => current && shells.some((repo) => repo.id === current) ? current : shells[0]?.id ?? null);
-      setMessage(`${shells.length} repositories found. Loading status...`);
+      const loadingMessage = `${shells.length} repositories found. Loading status...`;
+      setMessage(loadingMessage);
 
       await Promise.all(shells.map(async (repo) => {
         try {
           const status = await window.repoRadar.refreshRepository(repo.absolutePath, fetch);
-          updateRepo(status);
-          updateRepo({ ...status, branchComparisonLoading: true });
-          try {
-            const comparison = await window.repoRadar.getBranchComparison(repo.absolutePath);
-            updateRepo({
-              ...status,
-              branchComparison: comparison,
-              branchComparisonLoaded: true,
-              branchComparisonLoading: false
-            });
-          } catch (err) {
-            updateRepo({
-              ...status,
-              branchComparison: null,
-              branchComparisonLoaded: true,
-              branchComparisonLoading: false,
-              warnings: [
-                ...status.warnings,
-                { code: "branch-comparison-failed", message: "Could not load Develop/Main comparison.", detail: err instanceof Error ? err.message : String(err) }
-              ]
-            });
-          }
+          await updateRepoAndCompare(status, repo);
         } catch (err) {
-          updateRepo({
+          const failed = {
             ...repo,
             statusLoading: false,
             errors: [{ code: "status-failed", message: "Could not read repository status.", detail: err instanceof Error ? err.message : String(err) }]
-          });
+          };
+          setRepos(current => current.map(item => item === repo ? failed : item));
         }
       }));
-      setMessage(`${shells.length} repositories loaded.`);
+      setMessage(current => current === loadingMessage ? `${shells.length} repositories loaded.` : current);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -133,9 +114,27 @@ export function App() {
         ...updated,
         branchComparison: updated.branchComparisonLoaded ? updated.branchComparison : repo.branchComparison,
         branchComparisonLoaded: updated.branchComparisonLoaded ?? repo.branchComparisonLoaded,
-        branchComparisonLoading: updated.branchComparisonLoading ?? repo.branchComparisonLoading
+        branchComparisonLoading: updated.branchComparisonLoading ?? false
       };
     }));
+  }
+
+  async function updateRepoAndCompare(status: RepoStatus, expected?: RepoStatus) {
+    const pending = { ...status, branchComparisonLoading: true };
+    setRepos(current => current.map(repo => repo.id === status.id && (!expected || repo === expected) ? pending : repo));
+    let comparison = null;
+    let warning;
+    try {
+      comparison = await window.repoRadar.getBranchComparison(status.absolutePath);
+    } catch (error) {
+      warning = { code: "branch-comparison-failed", message: "Could not load Develop/Main comparison.", detail: error instanceof Error ? error.message : String(error) };
+    }
+    // Only the status that requested this comparison can receive it. A newer
+    // refresh or Git action may already have replaced the pending object.
+    const completed = { ...pending, branchComparison: comparison, branchComparisonLoaded: true, branchComparisonLoading: false,
+      warnings: warning ? [...pending.warnings, warning] : pending.warnings };
+    setRepos(current => current.map(repo => repo === pending ? completed : repo));
+    return warning?.detail;
   }
 
   async function watchMain(repo: RepoStatus) {
@@ -218,6 +217,7 @@ export function App() {
           <RepoDetail
             repo={selected}
             onRepoUpdated={updateRepo}
+            onUpdateAndCompare={updateRepoAndCompare}
             onMessage={setMessage}
             onWatchMain={() => { if (selected) void watchMain(selected); }}
             mainWatched={Boolean(selected && settings.ciWatches?.some((watch) => ciPathKey(watch.repoPath) === ciPathKey(selected.absolutePath) && watch.branch === "main"))}

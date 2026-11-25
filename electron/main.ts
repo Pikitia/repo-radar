@@ -5,14 +5,15 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import type { DiffMode, RepoStatus } from "../src/types/repo.js";
+import type { DiffMode, RepoStatus, SyncCommitGuard, SyncDecision } from "../src/types/repo.js";
 import type { NpmCommandEvent, NpmScriptCommand, ScanOptions } from "../src/types/api.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { discoverRepositories } from "./git/discovery.js";
 import { getRepositoryStatus } from "./git/status.js";
 import { getCommitDiff, getDiff } from "./git/diff.js";
 import { getProjectFiles, readProjectFile } from "./git/projectFiles.js";
-import { bumpPackageVersion, commit, getGitIdentityBlockers, getRemoteUrl, pull, push, stageFiles, sync, unstageFiles } from "./git/actions.js";
+import { bumpPackageVersion, commit, commitAndSync, confirmSyncPush, finishSync, getGitIdentityBlockers, getRemoteUrl, pull, push, stageFiles, sync, unstageFiles } from "./git/actions.js";
+import { inspectSyncConflicts } from "./git/syncConflicts.js";
 import { createCommitProvider } from "./aiCommit.js";
 import { tryGit } from "./git/exec.js";
 import { getPackageVersionInfo } from "./git/versionBump.js";
@@ -81,6 +82,12 @@ function rootFolder(): string {
 function ciRootFolder(): string {
   const root = getSettings().rootFolder;
   if (!root) throw new Error("Choose a root folder before using CI Watch.");
+  return root;
+}
+
+function syncRootFolder(): string {
+  const root = getSettings().rootFolder;
+  if (!root) throw new Error("Choose a root folder before syncing.");
   return root;
 }
 
@@ -400,7 +407,12 @@ function registerIpc() {
   ipcMain.handle("repo:commit", (_event, repoPath: string, message: string) => commit(repoPath, rootFolder(), message));
   ipcMain.handle("repo:pull", (_event, repoPath: string) => pull(repoPath, rootFolder(), getSettings()));
   ipcMain.handle("repo:push", (_event, repoPath: string) => push(repoPath, rootFolder()));
-  ipcMain.handle("repo:sync", (_event, repoPath: string) => sync(repoPath, rootFolder(), getSettings()));
+  ipcMain.handle("repo:sync", (_event, repoPath: string, displayedBranch: string) => sync(repoPath, syncRootFolder(), getSettings(), displayedBranch));
+  ipcMain.handle("repo:commitAndSync", (_event, repoPath: string, expected: SyncCommitGuard, files: string[], message: string) =>
+    commitAndSync(repoPath, syncRootFolder(), getSettings(), expected, files, message));
+  ipcMain.handle("repo:confirmSyncPush", (_event, repoPath: string, token: string) => confirmSyncPush(repoPath, syncRootFolder(), token));
+  ipcMain.handle("repo:syncConflictReview", (_event, repoPath: string) => inspectSyncConflicts(repoPath, syncRootFolder()));
+  ipcMain.handle("repo:finishSync", (_event, repoPath: string, token: string, decisions: SyncDecision[], skipEmptyPatch?: boolean) => finishSync(repoPath, syncRootFolder(), token, decisions, skipEmptyPatch));
   ipcMain.handle("repo:npmVerifyScript", (_event, repoPath: string) => getNpmVerifyScript(repoPath));
   ipcMain.handle("repo:npmCommand", (event, repoPath: string, runId: string, command: "update" | NpmScriptCommand) => startNpmCommand(event, repoPath, runId, command));
   ipcMain.handle("commit:preview", async (_event, repoPath: string) => {

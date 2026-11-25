@@ -138,7 +138,7 @@ describe("Git integration", () => {
     status = await getRepositoryStatus(repo, root, true);
     expect(status.ahead).toBe(1);
     expect(status.behind).toBe(1);
-    await sync(repo, root, defaultSettings);
+    await sync(repo, root, defaultSettings, status.branch!);
     status = await getRepositoryStatus(repo, root, true);
     expect(status.ahead).toBe(0);
     expect(status.behind).toBe(0);

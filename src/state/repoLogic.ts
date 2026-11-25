@@ -7,6 +7,10 @@ export function isChanged(repo: RepoStatus): boolean {
   return repo.hasStagedChanges || repo.hasUnstagedChanges || repo.hasUntrackedFiles;
 }
 
+export function canReviewSync(repo: RepoStatus): boolean {
+  return repo.errors.some(issue => issue.code === "merge-in-progress" || issue.code === "rebase-in-progress");
+}
+
 export function hasFailedGitHubActions(repo: RepoStatus): boolean {
   return Boolean(repo.githubActions?.conclusion && FAILED_ACTION_CONCLUSIONS.has(repo.githubActions.conclusion));
 }
@@ -62,16 +66,20 @@ export function actionAvailability(repo: RepoStatus | null): ActionAvailability 
   const blocked = repo.errors.length > 0;
   const changed = isChanged(repo);
   const noUpstream = !repo.upstream;
+  const reviewSync = canReviewSync(repo);
+  const syncReason = repo.statusLoading ? "Reading repository status." : reviewSync ? null
+    : blocked ? "Resolve blocking Git state first." : repo.isDetachedHead || !repo.branch ? "Check out a branch first."
+    : noUpstream ? "No upstream branch." : null;
   return {
     commit: changed && !blocked,
     pull: repo.behind > 0 && !blocked && !noUpstream,
     push: repo.ahead > 0 && !blocked && !noUpstream,
-    sync: (repo.ahead > 0 || repo.behind > 0) && !blocked && !noUpstream,
+    sync: syncReason === null,
     reasons: {
       commit: blocked ? "Resolve blocking Git state first." : changed ? null : "No local changes.",
       pull: blocked ? "Resolve blocking Git state first." : noUpstream ? "No upstream branch." : repo.behind > 0 ? null : "Branch is not behind.",
       push: blocked ? "Resolve blocking Git state first." : noUpstream ? "No upstream branch." : repo.ahead > 0 ? null : "Branch is not ahead.",
-      sync: blocked ? "Resolve blocking Git state first." : noUpstream ? "No upstream branch." : repo.ahead > 0 || repo.behind > 0 ? null : "Nothing to sync."
+      sync: syncReason
     }
   };
 }

@@ -62,7 +62,11 @@ const api: RepoRadarApi = {
   commit: (path: string, message: string) => invoke("repo:commit", path, message),
   pull: (path: string) => invoke("repo:pull", path),
   push: (path: string) => invoke("repo:push", path),
-  sync: (path: string) => invoke("repo:sync", path),
+  sync: (path, displayedBranch) => invoke("repo:sync", path, displayedBranch),
+  commitAndSync: (path, expected, files, message) => invoke("repo:commitAndSync", path, expected, files, message),
+  confirmSyncPush: (path, token) => invoke("repo:confirmSyncPush", path, token),
+  getSyncConflictReview: (path) => invoke("repo:syncConflictReview", path),
+  finishSync: (path, token, decisions, skipEmptyPatch = false) => invoke("repo:finishSync", path, token, decisions, skipEmptyPatch),
   getNpmVerifyScript: (path: string) => invoke<NpmScriptCommand | null>("repo:npmVerifyScript", path),
   startNpmCommand: (path: string, runId: string, command: "update" | NpmScriptCommand) => invoke("repo:npmCommand", path, runId, command),
   onNpmCommandEvent: (callback: (event: NpmCommandEvent) => void) => {

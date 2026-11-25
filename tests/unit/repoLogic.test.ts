@@ -44,6 +44,16 @@ describe("repo display logic", () => {
     expect(actionAvailability(repo({ errors: [{ code: "merge", message: "Merge in progress" }], hasStagedChanges: true })).commit).toBe(false);
   });
 
+  it("can fetch new remote work through Sync and resume an interrupted rebase", () => {
+    expect(actionAvailability(repo({ ahead: 0, behind: 0 })).sync).toBe(true);
+    for (const blocked of [
+      { statusLoading: true }, { upstream: null }, { branch: null, isDetachedHead: true },
+      { errors: [{ code: "cherry-pick-in-progress", message: "Cherry-pick in progress." }] }
+    ]) expect(actionAvailability(repo(blocked)).sync).toBe(false);
+    expect(actionAvailability(repo({ branch: null, upstream: null, isDetachedHead: true,
+      errors: [{ code: "rebase-in-progress", message: "Rebase in progress." }] })).sync).toBe(true);
+  });
+
   it("shows only tabs with content", () => {
     const tabs = visibleTabs(repo({
       files: [

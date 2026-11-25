@@ -9,6 +9,7 @@ export type ChangeKind = "modified" | "added" | "deleted" | "renamed" | "copied"
 export type ChangedFile = {
   path: string;
   oldPath?: string;
+  submoduleChange?: "commit" | "contents" | "commit-and-contents";
   kind: ChangeKind;
   staged: boolean;
   unstaged: boolean;
@@ -86,6 +87,7 @@ export type RepoStatus = {
   branch: string | null;
   upstream: string | null;
   isDetachedHead: boolean;
+  isUnborn?: boolean;
   hasUnstagedChanges: boolean;
   hasStagedChanges: boolean;
   hasUntrackedFiles: boolean;
@@ -102,12 +104,50 @@ export type RepoStatus = {
   githubActions?: GitHubActionsStatus | null;
   warnings: GitIssue[];
   errors: GitIssue[];
+  syncCommitRequired?: string;
+  syncCommitGuard?: SyncCommitGuard;
+  syncPushReview?: SyncPushReview;
   lastFetchedAt?: string;
 };
 
 export type RepoFilter = "all" | "changed" | "clean" | "ahead" | "behind" | "diverged" | "errors";
 
 export type DiffMode = "working" | "staged" | "untracked";
+
+export type SyncConflictSide = { exists: boolean; text: string | null };
+
+export type SyncCommitGuard = { branch: string; token: string };
+export type SyncPushReview = { token: string; upstream: string; destination: string };
+
+export type SyncConflictFile = {
+  path: string;
+  /** Matching identities allow the editor to retain this file's draft across review refreshes. */
+  identity?: string;
+  markerSize?: number;
+  generatedMarkerLines?: string[];
+  /** Git's active commit/ref labels for merge strategies without an AUTO_MERGE tree. */
+  fallbackMarkerLabels?: string[];
+  /** Source examples that Git also emitted as a conflict with indistinguishable context. */
+  ambiguousMarkerExamples?: { width: number; exampleIndex: number }[];
+  local: SyncConflictSide;
+  incoming: SyncConflictSide;
+  mergedText: string | null;
+};
+
+export type SyncConflictReview = {
+  /** Rewritten commits contributing the first and second parent in a recreated merge. */
+  mergeParents?: { first: string; second: string };
+  hasDeferredFiles?: boolean;
+  stagedPaths?: string[];
+  canSkipEmptyPatch?: boolean;
+  token: string;
+  operation: "merge" | "rebase";
+  files: SyncConflictFile[];
+};
+
+export type SyncDecision =
+  | { path: string; choice: "local" | "incoming" }
+  | { path: string; choice: "edited"; text: string };
 
 export type DiffResult = {
   file: string;

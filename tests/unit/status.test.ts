@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { parsePorcelainV2 } from "../../electron/git/status";
 
 describe("parsePorcelainV2", () => {
+  it("keeps the actual filenames when local edits must be staged for sync", () => {
+    const parsed = parsePorcelainV2([
+      "# branch.head main",
+      "2 R. N... 100644 100644 100644 a b R100 Tāupo [1].md",
+      "old\tname.md",
+      "1 .M N... 100644 100644 100644 a b multi\nline.txt",
+      ""
+    ].join("\0"));
+    expect(parsed.files).toMatchObject([
+      { path: "Tāupo [1].md", oldPath: "old\tname.md", kind: "renamed" },
+      { path: "multi\nline.txt", unstaged: true }
+    ]);
+  });
   it("parses branch, upstream, ahead/behind, and file states", () => {
     const parsed = parsePorcelainV2([
       "# branch.oid abc",

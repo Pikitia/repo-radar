@@ -5,11 +5,11 @@ import type { RepoStatus } from "../types/repo.js";
 type Props = {
   repo: RepoStatus;
   onClose(): void;
-  onRepoUpdated(repo: RepoStatus): void;
+  onUpdateAndCompare(repo: RepoStatus): Promise<string | undefined>;
   onMessage(message: string): void;
 };
 
-export function DevelopPullRequestDialog({ repo, onClose, onRepoUpdated, onMessage }: Props) {
+export function DevelopPullRequestDialog({ repo, onClose, onUpdateAndCompare, onMessage }: Props) {
   const [preview, setPreview] = useState<DevelopPullRequestPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -43,9 +43,8 @@ export function DevelopPullRequestDialog({ repo, onClose, onRepoUpdated, onMessa
       onMessage(completed.message);
       try {
         const status = await window.repoRadar.refreshRepository(repo.absolutePath, true);
-        onRepoUpdated(status);
-        const comparison = await window.repoRadar.getBranchComparison(repo.absolutePath);
-        onRepoUpdated({ ...status, branchComparison: comparison, branchComparisonLoaded: true, branchComparisonLoading: false });
+        const comparisonError = await onUpdateAndCompare(status);
+        if (comparisonError) setError(`Pull request operation finished, but repository refresh failed: ${comparisonError}`);
       } catch (err) {
         setError(`Pull request operation finished, but repository refresh failed: ${err instanceof Error ? err.message : String(err)}`);
       }

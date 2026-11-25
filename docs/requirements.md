@@ -123,7 +123,7 @@ Examples:
 - Commit enabled only when there are staged or unstaged local changes and no blocking Git operation is in progress.
 - Push enabled only when the branch is ahead of upstream and no blocking Git operation is in progress.
 - Pull enabled only when the branch is behind upstream and no blocking Git operation is in progress.
-- Sync enabled when the branch is ahead, behind, or diverged, and no blocking Git operation is in progress.
+- Sync enabled on a loaded, checked-out branch with an upstream so it can fetch changes made on another machine. A paused upstream merge or rebase offers the review action.
 - Open actions should remain available whenever the folder exists.
 
 ## Diff Review
@@ -199,11 +199,33 @@ Sync should mimic VS Code's Git sync concept:
 
 - Fetch first.
 - If the branch is behind, pull from upstream.
-- If the branch is ahead, push to upstream.
+- When a clone predates the first upstream commit, check out that commit and preserve local files. Keep the user's selections staged until the local files and configured integration policy allow the first save to proceed.
+- Integrate the fetched commit from the local object database. When a rebase has no local commits to replay, preserve Git's fast-forward signature and strategy policies. Preview divergent merge paths without running the user's custom content drivers. Protect ignored files at relocated paths and account for Windows path casing. Before continuing a merge-preserving rebase, check queued picks, resets, and recreated merges for collisions and identify the affected path.
+- If the branch is ahead, push to its configured destination.
 - If the branch is both ahead and behind, pull first and then push if the pull succeeds.
-- If conflicts occur, stop and show the conflict state.
+- If Git has no configured reconciliation preference, use a merge for diverged branches.
+- When fast-forward-only integration is in effect, stop on divergence before invoking the configured merge strategy. Account for the selected strategy and branch merge options when checking whether a merge would overwrite ignored files, including names with non-ASCII case differences on Windows.
+- If a repository uses an external merge strategy and contains untracked or ignored files, direct the user to complete the merge in Git.
+- Check the strategy's actual checkout paths even when the local branch is only behind. Check Git's alternate filenames for file/directory conflicts before starting or continuing a rebase. Name the endangered local file so the user can move it and retry.
+- Direct the user to Git when a branch has multiple configured pull heads or a required rebase enables automatic branch-ref updates. Preserve the working tree, index and local branches, including changes selected in an open save prompt. A clean fast-forward can still proceed with automatic ref updates configured.
+- Bind Sync to the branch displayed when the user clicks it. If another tool switches the checkout, ask the user to refresh.
+- If a pull would overwrite local work, including a directory containing untracked files, show the branch, its staged changes and the remaining edits the user can include. Confirm the same branch, HEAD and staged state before committing and continuing Sync. If the checkout changes, require a fresh review.
+- When a merge or rebase pauses on conflicts, open a review showing the changes from this computer and the incoming branch. Let the user resolve individual text conflicts, edit the result, or choose a whole version including a deletion.
+- When a rebase recreates a merge, identify its first and second parents by commit hash and subject. Keep combined changes in the displayed parent order.
+- Preserve unselected files when staging a deletion, including when a directory now occupies the deleted path. Identify untracked nested repositories in the commit prompt and leave their contents under their own Git history.
+- A parent repository can record a changed submodule commit. Show separately when uncommitted work remains inside the submodule.
+- Preserve literal conflict examples, documented marker lines, and edited underlined headings. Check submitted text against the original Git conflict even when an external editor already cleaned the working file. Require an explicit resolution when a remaining block could still be the real conflict. Offer whole-file choices for files with a declared non-UTF-8 working-tree encoding.
+- Accept punctuation in renamed source-backed headings. Detect leftover diff3 ancestor markers at the file's configured marker width, including Git's constructed merge base during an apply-backend rebase.
+- When Git recreates a merge without a saved conflict tree, check the marker labels for its actual merge base and rewritten parent before accepting edited or staged text.
+- When a conflicted attributes file can change how other files are read or written, apply its resolution before reviewing the affected files. Opening the editor preserves a selected deletion until the user edits the contents.
+- Recheck each file and its effective attributes before applying its resolution. On refresh, keep drafts for files whose conflict inputs are unchanged. Verify the expected staged changes before continuing Git and show staged paths, including submodule commits, when a review is reopened.
+- Offer to skip an empty apply-backend rebase patch only when Git records a resolved conflict for the stopped patch. A blocked, unapplied commit must stay available. Require a fresh review if the replay order changes.
+- After all choices are confirmed, stage the resolutions, continue the Git operation, review further conflicts if necessary, and push the current commit to its configured push destination. If that destination differs from the upstream, show both and ask before pushing. Report a missing upstream after fetching. A failed push leaves the completed work available locally for another Sync.
+- Allow the user to close the review and return to the pending Git operation later.
+- Keep keyboard focus inside each sync decision and return focus to its launcher when the decision closes. A background branch comparison must preserve the latest sync status. Opening a toolbar shortcut during Sync must keep other Git operations disabled until Sync finishes.
 - If no upstream exists, prompt the user before setting upstream or pushing.
 - Sync must never discard local changes.
+- Check the configured push destination after pulling. An up-to-date destination needs no confirmation. When other refs are configured for push, Sync publishes only the reviewed branch. Refresh the upstream counts after publishing through a different remote or URL to the upstream branch name.
 - Sync must never force-push in v1.
 
 ## Safety Constraints

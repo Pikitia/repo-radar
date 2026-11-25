@@ -331,9 +331,43 @@ textarea { min-height: 210px; resize: vertical; width: 100%; }
 }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 10; }
 .modal { width: min(920px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; background: #1d2025; border: 1px solid #414852; border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+dialog.modal { padding: 0; color: inherit; }
+dialog.modal::backdrop { background: rgba(0,0,0,.55); }
 .modal header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #303640; }
 .modal h2, .modal h3 { margin: 0; }
+.merge-dialog { display: flex; flex-direction: column; overflow: hidden; }
+.merge-dialog header, .merge-dialog footer { flex: none; }
+.merge-dialog header p { margin: 3px 0 0; color: #b3bdc7; overflow-wrap: anywhere; }
+.merge-body { padding: 16px; overflow: auto; min-height: 0; }
+.merge-body > :first-child, .merge-options > :first-child { margin-top: 0; }
+.merge-file-picker { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.merge-file-picker select { flex: 1; min-width: 100px; }
+.merge-file-picker span, .merge-dialog em { color: #b3bdc7; }
+.merge-options { margin: 16px 0 0; padding: 0; border: 0; min-width: 0; }
+.merge-options details, .merge-editor { margin-top: 14px; }
+.merge-options summary { cursor: pointer; }
+.merge-block { padding: 12px; margin: 12px 0; border: 1px solid #414852; border-radius: 6px; }
+.merge-block h3 { font-size: 15px; }
+.merge-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 10px 0; }
+.merge-sides > section { display: flex; flex-direction: column; align-items: start; min-width: 0; }
+.merge-sides h4 { margin: 0 0 6px; font-size: 13px; }
+.merge-sides pre, .merge-editor textarea {
+  width: 100%; margin: 0 0 8px; padding: 10px; background: #15181d; border: 1px solid #343b45;
+  border-radius: 4px; color: #e4e9ee; font: 13px/1.5 Consolas, monospace; tab-size: 4;
+}
+.merge-sides pre { flex: 1; max-height: 260px; overflow: auto; }
+.merge-options button[aria-pressed="true"] { border-color: #8fbfee; background: #334e69; }
+.merge-editor label { display: block; margin-bottom: 6px; }
+.merge-editor textarea { min-height: 180px; resize: vertical; }
+.merge-dialog footer { display: flex; gap: 8px; align-items: center; padding: 12px 16px; border-top: 1px solid #414852; }
+.merge-dialog footer > span { display: flex; align-items: center; gap: 5px; flex: 1; color: #bad7b9; }
+@media (max-width: 680px) {
+  .merge-sides { grid-template-columns: 1fr; }
+  .merge-dialog footer { flex-wrap: wrap; }
+}
 .commit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px; }
+.sync-commit-info { padding: 0 14px; }
+.sync-commit-info pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .check-row { display: flex; gap: 8px; align-items: center; min-height: 26px; overflow-wrap: anywhere; }
 .row-actions, .message-header, .path-picker, .file-group-header { display: flex; gap: 8px; align-items: center; }
 .file-group-header { justify-content: space-between; margin-top: 10px; }

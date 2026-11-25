@@ -1,18 +1,21 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { Check, Plus, X } from "lucide-react";
 import type { NpmScriptCommand } from "../types/api";
 import type { RepoStatus } from "../types/repo";
-import { visibleTabs } from "../state/repoLogic";
+import { canReviewSync, visibleTabs } from "../state/repoLogic";
 import { Toolbar } from "./Toolbar";
 import { DiffViewer } from "./DiffViewer";
 import { ProjectFilesViewer } from "./ProjectFilesViewer";
 import { CommitDialog } from "./CommitDialog";
 import { BranchComparisonTab } from "./BranchComparisonTab";
 import { DevelopPullRequestDialog } from "./DevelopPullRequestDialog.js";
+import { SyncConflictDialog } from "./SyncConflictDialog.js";
+import { RepositoryDialog } from "./RepositoryDialog.js";
 
 type Props = {
   repo: RepoStatus | null;
   onRepoUpdated(repo: RepoStatus): void;
+  onUpdateAndCompare(repo: RepoStatus, expected?: RepoStatus): Promise<string | undefined>;
   onMessage(message: string): void;
   onWatchMain(): void;
   mainWatched: boolean;
@@ -45,17 +48,34 @@ const tabLabels: Record<StaticTab, string> = {
   project: "Project Files"
 };
 
-export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWatched, watchMainBusy }: Props) {
+export function RepoDetail({ repo, onRepoUpdated, onUpdateAndCompare, onMessage, onWatchMain, mainWatched, watchMainBusy }: Props) {
   const [tab, setTab] = useState<Tab | null>(null);
   const [busy, setBusy] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
   const [promoteRepo, setPromoteRepo] = useState<RepoStatus | null>(null);
+  const [syncReview, setSyncReview] = useState<RepoStatus | null>(null);
+  const syncButton = useRef<HTMLButtonElement>(null);
+  const repoHeading = useRef<HTMLHeadingElement>(null);
+  const restoreSyncFocus = useRef<string | null>(null);
   const [npmCommandTabs, setNpmCommandTabs] = useState<NpmCommandTab[]>([]);
   const [verifyScript, setVerifyScript] = useState<NpmScriptCommand | null>(null);
 
   const tabs: StaticTab[] = repo ? visibleTabs(repo) : [];
   const repoNpmCommandTabs = repo ? npmCommandTabs.filter((item) => item.repoId === repo.id) : [];
   const npmCommandRunning = repoNpmCommandTabs.some((item) => item.running);
+
+  useLayoutEffect(() => {
+    if (syncReview && syncReview.id === repo?.id) {
+      restoreSyncFocus.current = repo.id;
+    } else if (restoreSyncFocus.current && !busy) {
+      // Sync can disable and blur its launcher before the first dialog even opens.
+      // Wait for the action to finish and respect focus moved elsewhere by the user.
+      if (restoreSyncFocus.current === repo?.id && document.activeElement === document.body) {
+        (syncButton.current?.disabled ? repoHeading.current : syncButton.current)?.focus();
+      }
+      restoreSyncFocus.current = null;
+    }
+  }, [syncReview, repo?.id, busy]);
 
   useEffect(() => {
     if (!repo) {
@@ -113,26 +133,63 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
     return <main className="detail empty-detail">Select a repository or configure a root folder.</main>;
   }
 
-  async function runAction(action: () => Promise<RepoStatus | void>, success: string) {
+  async function runAction(action: () => Promise<RepoStatus>, success: string) {
     setBusy(true);
     try {
       const updated = await action();
-      if (updated) {
-        onRepoUpdated(updated);
-        try {
-          const comparison = await window.repoRadar.getBranchComparison(updated.absolutePath);
-          onRepoUpdated({ ...updated, branchComparison: comparison, branchComparisonLoaded: true, branchComparisonLoading: false });
-        } catch (error) {
-          onRepoUpdated({ ...updated, branchComparison: null, branchComparisonLoaded: true, branchComparisonLoading: false,
-            warnings: [...updated.warnings, { code: "branch-comparison-failed", message: "Could not load Develop/Main comparison.", detail: error instanceof Error ? error.message : String(error) }] });
-        }
-      }
+      await onUpdateAndCompare(updated);
       onMessage(success);
     } catch (err) {
       onMessage(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function runShortcut(action: () => Promise<void>, success: string) {
+    try {
+      await action();
+      onMessage(success);
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function showSyncResult(updated: RepoStatus, done = "Sync complete.") {
+    if (updated.syncPushReview || updated.syncCommitGuard || canReviewSync(updated)) {
+      onRepoUpdated(updated);
+      setSyncReview(updated);
+      onMessage(`Review ${updated.name} to finish syncing.`);
+    } else {
+      setSyncReview(null);
+      onMessage(updated.errors[0]?.message ?? done);
+      await onUpdateAndCompare(updated);
+    }
+  }
+
+  async function runSyncAction(target: RepoStatus, action: () => Promise<RepoStatus>, done?: string) {
+    setBusy(true);
+    try {
+      await showSyncResult(await action(), done);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      try {
+        const updated = await window.repoRadar.refreshRepository(target.absolutePath, false);
+        onRepoUpdated(updated);
+        setSyncReview(canReviewSync(updated) ? updated : null);
+        onMessage(message);
+      } catch (refreshError) {
+        onMessage(`${message} Could not refresh ${target.name}. ${refreshError instanceof Error ? refreshError.message : String(refreshError)}`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startSync(target: RepoStatus) {
+    const branch = target.branch;
+    if (canReviewSync(target)) setSyncReview(target);
+    else if (branch) void runSyncAction(target, () => window.repoRadar.sync(target.absolutePath, branch));
   }
 
   function openExternal(event: MouseEvent<HTMLAnchorElement>, url: string) {
@@ -209,7 +266,7 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
     <main className="detail">
       <header className="detail-header repo-detail-header">
         <div>
-          <h1>{repo.name}</h1>
+          <h1 tabIndex={-1} ref={repoHeading}>{repo.name}</h1>
           <p title={repo.absolutePath}>{repo.absolutePath}</p>
         </div>
         <button onClick={onWatchMain} disabled={mainWatched || watchMainBusy || repo.statusLoading} title={mainWatched ? "The main branch is already in CI Watch." : "Add main to CI Watch using the latest run on that branch."}>
@@ -217,22 +274,23 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
         </button>
       </header>
       <Toolbar
+        syncButtonRef={syncButton}
         repo={repo}
         busy={busy}
         onCommit={() => setCommitOpen(true)}
         onPull={() => runAction(() => window.repoRadar.pull(repo.absolutePath), "Pull complete.")}
         onPush={() => runAction(() => window.repoRadar.push(repo.absolutePath), "Push complete.")}
-        onSync={() => runAction(() => window.repoRadar.sync(repo.absolutePath), "Sync complete.")}
+        onSync={() => void startSync(repo)}
         onRefresh={() => runAction(() => window.repoRadar.refreshRepository(repo.absolutePath, true), "Repository refreshed.")}
         onNpmUpdate={() => runNpmCommand("update")}
         onNpmVerify={verifyScript ? () => runNpmCommand(verifyScript) : undefined}
         npmCommandRunning={npmCommandRunning}
         verifyScript={verifyScript}
-        onVSCode={() => runAction(() => window.repoRadar.openVSCode(repo.absolutePath), "Opened VS Code.")}
-        onExplorer={() => runAction(() => window.repoRadar.openExplorer(repo.absolutePath), "Opened Explorer.")}
-        onTerminal={() => runAction(() => window.repoRadar.openTerminal(repo.absolutePath), "Opened terminal.")}
-        onCopy={() => runAction(() => window.repoRadar.copyPath(repo.absolutePath), "Path copied.")}
-        onRemote={() => runAction(() => window.repoRadar.openRemote(repo.absolutePath), "Opened remote.")}
+        onVSCode={() => runShortcut(() => window.repoRadar.openVSCode(repo.absolutePath), "Opened VS Code.")}
+        onExplorer={() => runShortcut(() => window.repoRadar.openExplorer(repo.absolutePath), "Opened Explorer.")}
+        onTerminal={() => runShortcut(() => window.repoRadar.openTerminal(repo.absolutePath), "Opened terminal.")}
+        onCopy={() => runShortcut(() => window.repoRadar.copyPath(repo.absolutePath), "Path copied.")}
+        onRemote={() => runShortcut(() => window.repoRadar.openRemote(repo.absolutePath), "Opened remote.")}
         onPromoteDevelop={() => setPromoteRepo(repo)}
       />
       <section className="status-strip">
@@ -281,7 +339,7 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
         {tab === "working" && <DiffViewer repo={repo} mode="working" />}
         {tab === "staged" && <DiffViewer repo={repo} mode="staged" />}
         {tab === "untracked" && <DiffViewer repo={repo} mode="untracked" />}
-        {tab === "branches" && <BranchComparisonTab repo={repo} onMessage={onMessage} onRepoUpdated={onRepoUpdated} />}
+        {tab === "branches" && <BranchComparisonTab repo={repo} onMessage={onMessage} onCompare={onUpdateAndCompare} />}
         {tab === "project" && <ProjectFilesViewer repo={repo} />}
         {tab === "actions" && repo.githubActions && (
           <div className="actions-panel">
@@ -343,7 +401,28 @@ export function RepoDetail({ repo, onRepoUpdated, onMessage, onWatchMain, mainWa
         )}
       </section>
       {commitOpen && <CommitDialog repo={repo} onClose={() => setCommitOpen(false)} onCommitted={onRepoUpdated} />}
-      {promoteRepo && <DevelopPullRequestDialog repo={promoteRepo} onClose={() => setPromoteRepo(null)} onRepoUpdated={onRepoUpdated} onMessage={onMessage} />}
+      {syncReview?.id === repo.id && syncReview.syncCommitGuard && <CommitDialog key={syncReview.syncCommitGuard.token}
+        repo={syncReview} syncReason={syncReview.syncCommitRequired} onClose={() => setSyncReview(null)}
+        onCommitted={onRepoUpdated} onSyncCommit={(files, message) => runSyncAction(syncReview,
+          () => window.repoRadar.commitAndSync(syncReview.absolutePath, syncReview.syncCommitGuard!, files, message))} />}
+      {syncReview?.id === repo.id && syncReview.syncPushReview && (
+        <RepositoryDialog titleId="sync-push-title" className="develop-pr-modal" busy={busy} onClose={() => setSyncReview(null)}>
+            <header><h2 id="sync-push-title">Confirm push destination</h2></header>
+            <p><strong>{syncReview.name}</strong> pulls from <strong>{syncReview.syncPushReview.upstream}</strong>.
+              Git is configured to push {syncReview.branch} to <strong>{syncReview.syncPushReview.destination}</strong>.</p>
+            <div className="row-actions">
+              <button disabled={busy} onClick={() => setSyncReview(null)}>Cancel</button>
+              <button className="primary" disabled={busy} onClick={() => {
+                const { token, destination } = syncReview.syncPushReview!;
+                void runSyncAction(syncReview, () => window.repoRadar.confirmSyncPush(syncReview.absolutePath, token), `Pushed to ${destination}.`);
+              }}>{busy ? "Pushing…" : `Push to ${syncReview.syncPushReview.destination}`}</button>
+            </div>
+        </RepositoryDialog>
+      )}
+      {promoteRepo && <DevelopPullRequestDialog repo={promoteRepo} onClose={() => setPromoteRepo(null)} onUpdateAndCompare={onUpdateAndCompare} onMessage={onMessage} />}
+      {syncReview?.id === repo.id && canReviewSync(syncReview) && <SyncConflictDialog key={repo.id} repo={syncReview}
+        onClose={() => setSyncReview(null)} onRepoUpdated={onRepoUpdated} onMessage={onMessage}
+        onComplete={showSyncResult} />}
     </main>
   );
 }
